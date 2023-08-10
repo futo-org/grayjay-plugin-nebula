@@ -1,0 +1,29 @@
+{
+    "name": "Nebula (Beta)",
+    "description": "A subscription-based video platform, co-owned by Standard Broadcast LLC and various creators.",
+    "author": "FUTO",
+    "authorUrl": "https://futo.org",
+
+    "sourceUrl": "https://autoupdate.unkto.com/sources/Nebula/NebulaConfig.json",
+    "repositoryUrl": "https://futo.org",
+    "scriptUrl": "./NebulaScript.js",
+    "version": 1,
+
+    "iconUrl": "./nebula.png",
+    "id": "9d703ff5-c556-4962-a990-4f000829cb87",
+
+    "scriptSignature": "",
+    "scriptPublicKey": "",
+    "packages": ["Http"],
+
+    "allowEval": false,
+    "allowUrls": ["nebula.tv", "content.api.nebula.app", "nebula.app", "users.api.nebula.app"],
+
+    "authentication": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "loginUrl": "https://nebula.tv/login",
+        "headersToFind": ["Authorization"],
+        "cookiesToFind": ["nebula_auth.apiToken"],
+        "completionUrl": "https://users.api.nebula.app/api/v1/authorization/"
+    }
+}
