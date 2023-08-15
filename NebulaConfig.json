@@ -7,7 +7,7 @@
     "sourceUrl": "https://autoupdate.unkto.com/sources/Nebula/NebulaConfig.json",
     "repositoryUrl": "https://futo.org",
     "scriptUrl": "./NebulaScript.js",
-    "version": 1,
+    "version": 2,
 
     "iconUrl": "./nebula.png",
     "id": "9d703ff5-c556-4962-a990-4f000829cb87",
@@ -25,5 +25,7 @@
         "headersToFind": ["Authorization"],
         "cookiesToFind": ["nebula_auth.apiToken"],
         "completionUrl": "https://users.api.nebula.app/api/v1/authorization/"
-    }
+    },
+
+    "supportedClaimTypes": [19]
 }

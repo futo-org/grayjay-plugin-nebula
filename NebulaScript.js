@@ -4,6 +4,7 @@ const BASE_URL = 'https://nebula.tv/'
 const LANG = 'en'
 const PLATFORM = 'nebula'
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
+const PLATFORM_CLAIMTYPE = 19;
 
 var config = {}
 
@@ -60,7 +61,7 @@ source.getChannel = function (url) {
     const j = callUrl(`https://content.api.nebula.app/content/${login}`)
 
     return new PlatformChannel({
-        id: new PlatformID(PLATFORM, j.id, config.id),
+        id: new PlatformID(PLATFORM, j.id, config.id, PLATFORM_CLAIMTYPE),
         name: j.title,
         thumbnail: j.images.avatar.src,
         banner: j.images.banner.src,
@@ -288,7 +289,7 @@ class SearchPagerChannels extends ChannelPager {
  */
 function searchChannelToPlatformChannel(c) {
     return new PlatformChannel({
-        id: new PlatformID(PLATFORM, c.id, config.id),
+        id: new PlatformID(PLATFORM, c.id, config.id, PLATFORM_CLAIMTYPE),
         name: c.title,
         thumbnail: c.images.avatar.src,
         banner: c.images.banner.src,
@@ -309,7 +310,7 @@ function contentToPlatformVideo(c) {
         name: c.title,
         thumbnails: new Thumbnails([new Thumbnail(c.images.thumbnail.src, 0)]),
         author: new PlatformAuthorLink(
-            new PlatformID(PLATFORM, c.channel_id, config.id),
+            new PlatformID(PLATFORM, c.channel_id, config.id, PLATFORM_CLAIMTYPE),
             c.channel_title,
             BASE_URL + c.channel_slug,
             c.images.channel_avatar.src
