@@ -82,6 +82,18 @@ source.getChannelContents = function (url) {
 
     return new ChannelVideoPager({ next: null, id: j.id })
 }
+
+
+source.getChannelTemplateByClaimMap = () => {
+    return {
+        //Nebula
+        19: {
+            0: URL_BASE + "{{CLAIMVALUE}}"
+        }
+    };
+};
+
+
 source.isContentDetailsUrl = function (url) {
     return /nebula\.tv\/videos\/[a-zA-Z0-9-_]+\/?/.test(url)
 }
