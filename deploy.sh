@@ -7,9 +7,10 @@ touch $DOCUMENT_ROOT/maintenance.file
 
 # Swap over the content
 echo "Deploying content..."
-cp nebula.png $DOCUMENT_ROOT/
-cp NebulaConfig.json $DOCUMENT_ROOT/
-cp NebulaScript.js $DOCUMENT_ROOT/
+mkdir -p $DOCUMENT_ROOT/Nebula
+cp nebula.png $DOCUMENT_ROOT/Nebula
+cp NebulaConfig.json $DOCUMENT_ROOT/Nebula
+cp NebulaScript.js $DOCUMENT_ROOT/Nebula
 
 # Notify Cloudflare to wipe the CDN cache
 echo "Purging Cloudflare cache..."
