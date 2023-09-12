@@ -4,7 +4,7 @@
     "author": "FUTO",
     "authorUrl": "https://futo.org",
 
-    "sourceUrl": "https://autoupdate.unkto.com/sources/Nebula/NebulaConfig.json",
+    "sourceUrl": "https://plugins.grayjay.app/Nebula/NebulaConfig.json",
     "repositoryUrl": "https://futo.org",
     "scriptUrl": "./NebulaScript.js",
     "version": 3,
