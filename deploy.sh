@@ -13,11 +13,11 @@ cp NebulaConfig.json $DOCUMENT_ROOT/Nebula
 cp NebulaScript.js $DOCUMENT_ROOT/Nebula
 
 # Notify Cloudflare to wipe the CDN cache
-echo "Purging Cloudflare cache..."
+echo "Purging Cloudflare cache for zone $CLOUDFLARE_ZONE_ID..."
 curl -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
      -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
      -H "Content-Type: application/json" \
-     --data '{"purge_everything":true}'
+     --data '{"files":["https://plugins.grayjay.app/Nebula/nebula.png", "https://plugins.grayjay.app/Nebula/NebulaConfig.json", "https://plugins.grayjay.app/Nebula/NebulaScript.js"]}'
 
 # Take site back online
 echo "Bringing site back online..."
