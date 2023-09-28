@@ -11,6 +11,7 @@ mkdir -p $DOCUMENT_ROOT/Nebula
 cp nebula.png $DOCUMENT_ROOT/Nebula
 cp NebulaConfig.json $DOCUMENT_ROOT/Nebula
 cp NebulaScript.js $DOCUMENT_ROOT/Nebula
+sh sign.sh $DOCUMENT_ROOT/Nebula/NebulaScript.js $DOCUMENT_ROOT/Nebula/NebulaConfig.json
 
 # Notify Cloudflare to wipe the CDN cache
 echo "Purging Cloudflare cache for zone $CLOUDFLARE_ZONE_ID..."
