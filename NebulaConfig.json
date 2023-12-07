@@ -8,7 +8,7 @@
     "sourceUrl": "https://plugins.grayjay.app/Nebula/NebulaConfig.json",
     "repositoryUrl": "https://futo.org",
     "scriptUrl": "./NebulaScript.js",
-    "version": 6,
+    "version": 8,
 
     "iconUrl": "./nebula.png",
     "id": "9d703ff5-c556-4962-a990-4f000829cb87",

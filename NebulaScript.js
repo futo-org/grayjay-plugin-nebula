@@ -101,7 +101,9 @@ source.getContentDetails = function (url) {
     const id = url.split('/').pop()
 
     if(!bridge.isLoggedIn())
-        throw new UnavailableException('Nebula videos are only available after login');
+        throw new ScriptLoginRequiredException("Nebula videos are only available after login");
+
+        //throw new UnavailableException('Nebula videos are only available after login');
     /** @type {import("./types.d.ts".ContentDetail)} */
     const j = callUrl(`https://content.api.nebula.app/content/videos/${id}`, true)
 
@@ -154,8 +156,11 @@ function callUrl(url, use_authenticated = false, parse_response = true) {
         if (resp.code === 401) {
             throw new UnavailableException('Video is only available to Nebula Subscribers')
         } else {
-            throw new ScriptException(resp.statusMessage)
+            throw new ScriptException(resp.statusMessage + "(code: " + resp.code + ")");
         }
+
+        //TODO: Call this if expired login token
+        //throw new ScriptLoginRequiredException("Nebula login expired, please login again, this should be mostly automatic.");
     }
 
     if (parse_response) {
