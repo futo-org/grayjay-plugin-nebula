@@ -155,12 +155,12 @@ function callUrl(url, use_authenticated = false, parse_response = true) {
         // log(resp)
         if (resp.code === 401) {
             throw new UnavailableException('Video is only available to Nebula Subscribers')
+        }
+        else if(resp.code === 403) {
+            throw new ScriptLoginRequiredException("Nebula login may have expired, please login again, this should be mostly automatic.");
         } else {
             throw new ScriptException(resp.statusMessage + "(code: " + resp.code + ")");
         }
-
-        //TODO: Call this if expired login token
-        //throw new ScriptLoginRequiredException("Nebula login expired, please login again, this should be mostly automatic.");
     }
 
     if (parse_response) {
