@@ -1,5 +1,5 @@
 {
-    "name": "Nebula (Beta)",
+    "name": "Nebula",
     "description": "A subscription-based video platform, co-owned by Standard Broadcast LLC and various creators.",
     "author": "FUTO",
     "authorUrl": "https://futo.org",
@@ -20,7 +20,8 @@
         "nebula.tv",
         "content.api.nebula.app",
         "nebula.app",
-        "users.api.nebula.app"
+        "users.api.nebula.app",
+        "starlight.nebula.tv"
     ],
     "authentication": {
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
@@ -35,5 +36,14 @@
     },
     "supportedClaimTypes": [
         19
+    ],
+	"settings": [
+        {
+            "variable": "nebulaActivity",
+            "name": "Provide Nebula Activity",
+            "description": "Tell Nebula what you played",
+            "type": "Boolean",
+            "default": "false"
+        }
     ]
 }
