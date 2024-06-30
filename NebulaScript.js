@@ -22,7 +22,7 @@ let local_settings
 //#region source methods
 source.enable = function (_config, settings, savedState) {
     local_settings = settings
-    if (savedState === null) {
+    if (!savedState) {
         token = getToken()
     } else {
         token = savedState
