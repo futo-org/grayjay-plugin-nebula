@@ -5,6 +5,7 @@ export type HomeContext = {
 export type ChannelContext = {
     next?: string
     id: string
+    type: Channel["type"]
 }
 
 export type SearchContext = {
@@ -57,7 +58,7 @@ type Category = {
 
 type Channel = {
     id: string
-    type: 'video_channel'
+    type: 'video_channel' | "podcast_channel"
     slug: string
     slug_aliases: string[]
     title: string
@@ -138,7 +139,7 @@ type Channel = {
 
 type Content = {
     id: string
-    type: 'video_episode'
+    type: "video_episode" | "lesson" | "podcast_episode"
     slug: string
     title: string
     description: string
@@ -173,8 +174,8 @@ type Content = {
 }
 
 type ResponseWrapper<T> = {
-    next: string
-    previous?: string
+    next: string | null
+    previous: string | null
     results: T[]
 }
 

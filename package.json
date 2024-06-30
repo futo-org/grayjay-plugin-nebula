@@ -1,0 +1,35 @@
+{
+    "name": "grayjay-nebula-plugin",
+    "version": "1.0.0",
+    "description": "Nebula with type help",
+    "engines": {
+        "node": ">=20.0.0"
+    },
+    "module": "NebulaScript.js",
+    "scripts": {
+        "bun-release": "bun install && bun update && bun x npm-check-updates",
+        "npm-release": "npm install && npm update && npx npm-check-updates",
+        "bun-dev": "bun x http-server .",
+        "npm-dev": "npx http-server ."
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://gitlab.futo.org/videostreaming/plugins/nebula.git"
+    },
+    "keywords": [
+        "nebula",
+        "grayjay"
+    ],
+    "author": "FUTO",
+    "license": "AGPL-3.0-or-later",
+    "bugs": {
+        "url": "https://gitlab.futo.org/videostreaming/plugins/nebula/issues"
+    },
+    "homepage": "https://gitlab.futo.org/videostreaming/plugins/nebula",
+    "type": "module",
+    "devDependencies": {
+        "@grayjay/plugin": "gitlab:kaidelorenzo/grayjay-plugin-types#2810fd1ed67de7ec62f9d148bdc94f6830a2e369",
+        "http-server": "^14.1.1",
+        "npm-check-updates": "^16.14.20"
+    }
+}
