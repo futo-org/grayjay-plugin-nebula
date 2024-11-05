@@ -86,7 +86,7 @@ source.getChannel = function (url) {
         banner: j.images?.banner.src,
         subscribers: -1,
         description: j.description,
-        url: url,
+        url: `${BASE_URL}${login}`,
         links: getChannelLinks(j),
     })
 }
@@ -112,7 +112,7 @@ source.getChannelPlaylists = function (url) {
                 author: new PlatformAuthorLink(
                     new PlatformID(PLATFORM, slug, plugin.config.id, PLATFORM_CLAIMTYPE),
                     response.title,
-                    response.share_url,
+                    `${BASE_URL}${response.slug}`,
                     response.images.avatar.src
                 ),
                 url: `https://content.api.nebula.app/video_playlists/${playlist.id}/video_episodes/`
@@ -162,7 +162,7 @@ source.getUserSubscriptions = function () {
         false
     ).body)
 
-    const results = response.results.map((c) => c.share_url)
+    const results = response.results.map((c) => `${BASE_URL}${c.slug}`)
     while (response.next !== null) {
         response = JSON.parse(http.GET(
             response.next,
@@ -171,7 +171,7 @@ source.getUserSubscriptions = function () {
             },
             false
         ).body)
-        results.push(...response.results.map((c) => c.share_url))
+        results.push(...response.results.map((c) => `${BASE_URL}${c.slug}`))
     }
     /** @type {import("./types.d.ts").SubscriptionResponse} */
     response = JSON.parse(http.GET(
@@ -182,7 +182,7 @@ source.getUserSubscriptions = function () {
         false
     ).body)
 
-    results.push(...response.results.map((c) => c.share_url))
+    results.push(...response.results.map((c) => `${BASE_URL}${c.slug}`))
     while (response.next !== null) {
         response = JSON.parse(http.GET(
             response.next,
@@ -191,7 +191,7 @@ source.getUserSubscriptions = function () {
             },
             false
         ).body)
-        results.push(...response.results.map((c) => c.share_url))
+        results.push(...response.results.map((c) => `${BASE_URL}${c.slug}`))
     }
     return results
 }
@@ -309,18 +309,18 @@ source.getPlaylist = function (url) {
         const playlistId = url.match(PLAYLIST_REGEX)[1]
 
         const response = callUrl(url)
-        const first_video = response.results[1]
-        const channel_response = callUrl(`https://content.api.nebula.app/content/${first_video.channel_slug}`)
-        const playlist = channel_response.playlists.find((playlist) => playlist.id === playlistId)
+        const firstVideo = response.results[1]
+        const channelResponse = callUrl(`https://content.api.nebula.app/content/${firstVideo.channel_slug}`)
+        const playlist = channelResponse.playlists.find((playlist) => playlist.id === playlistId)
 
         return new PlatformPlaylistDetails({
             id: new PlatformID(PLATFORM, playlistId, plugin.config.id, PLATFORM_CLAIMTYPE),
             name: playlist.title,
             author: new PlatformAuthorLink(
-                new PlatformID(PLATFORM, first_video.channel_slug, plugin.config.id, PLATFORM_CLAIMTYPE),
-                channel_response.title,
-                channel_response.share_url,
-                channel_response.images.avatar.src
+                new PlatformID(PLATFORM, firstVideo.channel_slug, plugin.config.id, PLATFORM_CLAIMTYPE),
+                channelResponse.title,
+                `${BASE_URL}${channelResponse.slug}`,
+                channelResponse.images.avatar.src
             ),
             url,
             videoCount: response.results.length, // there may be more but this is a good guess
@@ -704,7 +704,7 @@ function searchChannelToPlatformChannel(c) {
         banner: c.images?.banner.src,
         subscribers: -1,
         description: c.description,
-        url: c.share_url,
+        url: `${BASE_URL}${c.slug}`,
         links: getChannelLinks(c),
     })
 }
@@ -730,7 +730,7 @@ function contentToPlatformVideo(c) {
         : new PlatformAuthorLink(
             new PlatformID(PLATFORM, c.class.creator, plugin.config.id, PLATFORM_CLAIMTYPE),
             c.class.creator,
-            ""
+            c.class.creator
         )
     return new PlatformVideo({
         id: new PlatformID(PLATFORM, c.id, plugin.config.id),
