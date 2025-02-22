@@ -5,7 +5,7 @@
     "authorUrl": "https://futo.org",
     "platformUrl": "https://nebula.tv",
     "sourceUrl": "https://plugins.grayjay.app/Nebula/NebulaConfig.json",
-    "repositoryUrl": "https://futo.org",
+    "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/nebula",
     "scriptUrl": "./NebulaScript.js",
     "version": 11,
     "iconUrl": "./NebulaIcon.png",
