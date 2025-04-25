@@ -7,7 +7,7 @@
     "sourceUrl": "https://plugins.grayjay.app/Nebula/NebulaConfig.json",
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/nebula",
     "scriptUrl": "./NebulaScript.js",
-    "version": 11,
+    "version": 12,
     "iconUrl": "./NebulaIcon.png",
     "id": "9d703ff5-c556-4962-a990-4f000829cb87",
     "scriptSignature": "",
@@ -37,6 +37,7 @@
     "supportedClaimTypes": [
         19
     ],
+    "subscriptionRateLimit": 15,
 	"settings": [
         {
             "variable": "nebulaActivity",
@@ -45,5 +46,10 @@
             "type": "Boolean",
             "default": "false"
         }
-    ]
+    ],
+    "changelog": {
+        "12" : [
+            "Add plugin specified subscription rate limit of 15 to reduce 429"
+        ]
+    }
 }
