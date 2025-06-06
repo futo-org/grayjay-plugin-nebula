@@ -281,7 +281,7 @@ source.getPlaylist = function (url) {
         // we don't need to paginate because watch later and saved episodes should only be used during playlist import
         while (next !== null) {
             const response = JSON.parse(http.GET(
-                userPlaylistInfo.url,
+                next,
                 {
                     Authorization: `Bearer ${token}`
                 },
@@ -716,7 +716,7 @@ function searchChannelToPlatformChannel(c) {
 function contentToPlatformVideo(c) {
     const thumbnailUrl = c.images === undefined
         ? c.assets["stripped-original"]
-        : c.images.thumbnail.src
+        : c.images.thumbnail?.src
     const channelThumbnailUrl = c.images === undefined
         ? c.assets["stripped-original"]
         : c.images.channel_avatar?.src
@@ -735,7 +735,7 @@ function contentToPlatformVideo(c) {
     return new PlatformVideo({
         id: new PlatformID(PLATFORM, c.id, plugin.config.id),
         name: c.title,
-        thumbnails: new Thumbnails([new Thumbnail(thumbnailUrl, HARDCODED_ZERO)]),
+        thumbnails: new Thumbnails([new Thumbnail(thumbnailUrl ?? channelThumbnailUrl, HARDCODED_ZERO)]),
         author,
         uploadDate: parseInt(new Date(c.published_at === undefined ? c.class.published_at : c.published_at).getTime() / 1000),
         duration: c.duration,

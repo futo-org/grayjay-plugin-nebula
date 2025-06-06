@@ -30,6 +30,6 @@
     "devDependencies": {
         "@grayjay/plugin": "gitlab:kaidelorenzo/grayjay-plugin-types#2810fd1ed67de7ec62f9d148bdc94f6830a2e369",
         "http-server": "^14.1.1",
-        "npm-check-updates": "^16.14.20"
+        "npm-check-updates": "^18.0.1"
     }
 }
