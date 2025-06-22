@@ -18,6 +18,11 @@ export type SearchChannelContext = {
     q: string
 }
 
+export type ContentRecommendationsContext = {
+    next?: string
+    videoId: string
+}
+
 type AssetType = {
     original: string
     webp: string
