@@ -1,5 +1,5 @@
 //#region constants
-const APP_VERSION = '24.6.0'
+const APP_VERSION = '25.6.0'
 const BASE_URL = 'https://nebula.tv/'
 const PLATFORM = 'Nebula'
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
@@ -115,7 +115,8 @@ source.getChannelPlaylists = function (url) {
                     `${BASE_URL}${response.slug}`,
                     response.images.avatar.src
                 ),
-                url: `https://content.api.nebula.app/video_playlists/${playlist.id}/video_episodes/`
+                url: `https://content.api.nebula.app/video_playlists/${playlist.id}/video_episodes/`,
+                thumbnail: response.images?.featured?.src || response.images?.avatar?.src
             })
         }),
         false
@@ -149,8 +150,15 @@ source.getContentDetails = function (url) {
 
     // callUrl(manifest_url, false, false) // this request verifies that the user has access to watch the video. If the user does not have access, the error checking in the callUrl method will throw an exception
 
-    return contentToPlatformVideoDetails(j, manifest_url)
+    const details = contentToPlatformVideoDetails(j, manifest_url)
+
+    details.getContentRecommendations = function (url) {
+        return new ContentRecommendationsPager({ videoId: j.id, next: null })
+    }
+
+    return details;
 }
+
 source.getUserSubscriptions = function () {
     // TODO this isn't done in parallel but that is ok because this is an uncommon workflow
     /** @type {import("./types.d.ts").SubscriptionResponse} */
@@ -340,6 +348,10 @@ source.getUserPlaylists = function () {
         "https://nebula.tv/library/saved-episodes",
         ...getSavedClasses()
     ]
+}
+source.getContentRecommendations = function (url) {
+    const contentMetadata = downloadContentDetails(url)
+    return new ContentRecommendationsPager({ videoId: contentMetadata.id, next: null })
 }
 source.getPlaybackTracker = function (url) {
     if (!local_settings.nebulaActivity) {
@@ -542,9 +554,19 @@ function getChannelLinks(c) {
 
     let links_map = {}
 
-    return keys.forEach((k) => {
-        if (c[k]) links_map[k] = c[k]
+    keys.forEach((k) => {
+        let label = k;
+
+        if (k === 'share_url') {
+            label = 'Nebula'
+        } else {
+            label = label.charAt(0).toUpperCase() + label.slice(1)
+        }
+
+        if (c[k]) links_map[label] = c[k]
     })
+
+    return links_map
 }
 //#endregion
 
@@ -686,6 +708,40 @@ class PlaylistContentsPager extends VideoPager {
     }
     hasMorePagers() {
         return this.hasMore
+    }
+}
+class ContentRecommendationsPager extends VideoPager {
+    /**
+     * @param {import("./types.d.ts").ContentRecommendationsContext} context
+     */
+    constructor(context) {
+        let url = `https://content.api.nebula.app/video_episodes/${context.videoId}/more?context_view=featured&page_size=20`
+        if (context.next !== null) url = context.next
+
+        /** @type {import("./types.d.ts").HomeResponse} */
+        const json = JSON.parse(http.GET(
+            url,
+            {
+                Authorization: `Bearer ${token}`,
+                'User-Agent': USER_AGENT,
+                Accept: 'application/json, text/plain, */*',
+                'Nebula-App-Version': APP_VERSION,
+                'Nebula-Platform': 'web',
+                Origin: 'https://nebula.tv',
+                Host: 'content.api.nebula.app'
+            },
+            false
+        ).body)
+
+        const results = json.results.map((c) => contentToPlatformVideo(c))
+
+        context.next = json.next
+
+        super(results, context.next !== null, context)
+    }
+
+    nextPage() {
+        return new ContentRecommendationsPager(this.context)
     }
 }
 //#endregion
