@@ -115,7 +115,8 @@ source.getChannelPlaylists = function (url) {
                     `${BASE_URL}${response.slug}`,
                     response.images.avatar.src
                 ),
-                url: `https://content.api.nebula.app/video_playlists/${playlist.id}/video_episodes/`
+                url: `https://content.api.nebula.app/video_playlists/${playlist.id}/video_episodes/`,
+                thumbnail: response.images?.featured?.src || response.images?.avatar?.src
             })
         }),
         false
