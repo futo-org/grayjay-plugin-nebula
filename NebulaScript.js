@@ -553,9 +553,19 @@ function getChannelLinks(c) {
 
     let links_map = {}
 
-    return keys.forEach((k) => {
-        if (c[k]) links_map[k] = c[k]
+    keys.forEach((k) => {
+        let label = k;
+
+        if (k === 'share_url') {
+            label = 'Nebula'
+        } else {
+            label = label.charAt(0).toUpperCase() + label.slice(1)
+        }
+
+        if (c[k]) links_map[label] = c[k]
     })
+
+    return links_map
 }
 //#endregion
 
