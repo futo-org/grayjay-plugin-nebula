@@ -810,6 +810,8 @@ function contentToPlatformVideoDetails(c, manifest_url) {
     const pv = contentToPlatformVideo(c)
     const pvd = new PlatformVideoDetails(pv)
     pvd.description = c.description === undefined ? c.class.description : c.description
+    // Nebula is English-only: no language metadata in the API, and HLS
+    // manifests contain a single audio track with no alternate languages.
     if (c.images === undefined) {
         pvd.video = new UnMuxVideoSourceDescriptor([], [new AudioUrlSource({
             name: "English",
@@ -821,9 +823,10 @@ function contentToPlatformVideoDetails(c, manifest_url) {
             language: "en"
         })])
     } else {
-        pvd.video = new VideoSourceDescriptor([
-            new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })
-        ])
+        pvd.video = new UnMuxVideoSourceDescriptor(
+            [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })],
+            [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url, language: 'en' })]
+        )
         pvd.subtitles = [{
             name: "English",
             format: "text/vtt",
