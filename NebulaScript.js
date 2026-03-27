@@ -321,7 +321,7 @@ source.getPlaylist = function (url) {
         const playlistId = url.match(PLAYLIST_REGEX)[1]
 
         const response = callUrl(url)
-        const firstVideo = response.results[1]
+        const firstVideo = response.results[0]
         const channelResponse = callUrl(`https://content.api.nebula.app/content/${firstVideo.channel_slug}`)
         const playlist = channelResponse.playlists.find((playlist) => playlist.id === playlistId)
 
