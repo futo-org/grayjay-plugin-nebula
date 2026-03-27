@@ -16,20 +16,24 @@ const CHANNEL_REGEX = /^https:\/\/nebula\.tv\/([a-zA-Z0-9-_]+)\/?$/
 const HARDCODED_ZERO = 0
 //#endregion
 
-let token
 let local_settings
+
+let state = {
+    token: null
+}
 
 //#region source methods
 source.enable = function (_config, settings, savedState) {
     local_settings = settings
-    if (!savedState) {
-        token = getToken()
-    } else {
-        token = savedState
+    if (savedState) {
+        state = JSON.parse(savedState)
+    }
+    if (!state.token) {
+        state.token = getToken()
     }
 }
 source.saveState = function () {
-    return token
+    return JSON.stringify(state)
 }
 source.getHome = function () {
     return new HomePager({ next: null })
@@ -145,8 +149,8 @@ source.getContentDetails = function (url) {
     const j = downloadContentDetails(url)
 
     const manifest_url = contentType === "video"
-        ? `https://content.api.nebula.app/video_episodes/${j.id}/manifest.m3u8?token=${token}&app_version=${APP_VERSION}&platform=web`
-        : `https://content.api.nebula.app/lessons/${j.id}/manifest.m3u8?token=${token}&app_version=${APP_VERSION}&platform=web`
+        ? `https://content.api.nebula.app/video_episodes/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
+        : `https://content.api.nebula.app/lessons/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
 
     // callUrl(manifest_url, false, false) // this request verifies that the user has access to watch the video. If the user does not have access, the error checking in the callUrl method will throw an exception
 
@@ -165,7 +169,7 @@ source.getUserSubscriptions = function () {
     let response = JSON.parse(http.GET(
         "https://content.api.nebula.app/video_channels/?following=true&ordering=-follow",
         {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${state.token}`
         },
         false
     ).body)
@@ -175,7 +179,7 @@ source.getUserSubscriptions = function () {
         response = JSON.parse(http.GET(
             response.next,
             {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${state.token}`
             },
             false
         ).body)
@@ -185,7 +189,7 @@ source.getUserSubscriptions = function () {
     response = JSON.parse(http.GET(
         "https://content.api.nebula.app/podcast_channels/?following=true&ordering=-follow",
         {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${state.token}`
         },
         false
     ).body)
@@ -195,7 +199,7 @@ source.getUserSubscriptions = function () {
         response = JSON.parse(http.GET(
             response.next,
             {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${state.token}`
             },
             false
         ).body)
@@ -255,7 +259,7 @@ source.getPlaylist = function (url) {
         const playlistType = url.match(USER_PLAYLISTS_REGEX)[1]
         const userData = JSON.parse(http.GET(
             "https://users.api.nebula.app/api/v1/auth/user/",
-            { Authorization: `Bearer ${token}` },
+            { Authorization: `Bearer ${state.token}` },
             false
         ).body)
         const username = userData.name === "" ? userData.email : userData.name
@@ -280,7 +284,7 @@ source.getPlaylist = function (url) {
         const response = JSON.parse(http.GET(
             userPlaylistInfo.url,
             {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${state.token}`
             },
             false
         ).body)
@@ -291,7 +295,7 @@ source.getPlaylist = function (url) {
             const response = JSON.parse(http.GET(
                 next,
                 {
-                    Authorization: `Bearer ${token}`
+                    Authorization: `Bearer ${state.token}`
                 },
                 false
             ).body)
@@ -397,7 +401,7 @@ function trackProgress(url, seconds) {
         url,
         JSON.stringify({ value: seconds }),
         {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${state.token}`,
             "Content-Type": "application/json"
         },
         false)
@@ -422,7 +426,7 @@ function downloadContentDetails(url) {
         }
     }()
 
-    if (!bridge.isLoggedIn())
+    if (!bridge.isLoggedIn() && !state.token)
         throw new ScriptLoginRequiredException("Nebula videos are only available after login");
 
     const contentUrl = function () {
@@ -439,18 +443,7 @@ function downloadContentDetails(url) {
     }()
 
     /** @type {import("./types.d.ts".ContentDetail)} */
-    const j = function () {
-        switch (contentType) {
-            case "video":
-                return callUrl(contentUrl, true)
-            case "episode":
-                return JSON.parse(http.GET(contentUrl, { Authorization: `Bearer ${token}` }).body)
-            case "lesson":
-                return JSON.parse(http.GET(contentUrl, { Authorization: `Bearer ${token}` }).body)
-            default:
-                throw new ScriptException("unreachable")
-        }
-    }()
+    const j = JSON.parse(http.GET(contentUrl, { Authorization: `Bearer ${state.token}` }).body)
     return j
 }
 function getSavedClasses() {
@@ -458,7 +451,7 @@ function getSavedClasses() {
     const response = JSON.parse(http.GET(
         url,
         {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${state.token}`
         },
         false
     ).body)
@@ -468,7 +461,7 @@ function getSavedClasses() {
         const response = JSON.parse(http.GET(
             url,
             {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${state.token}`
             },
             false
         ).body)
@@ -611,7 +604,7 @@ class ChannelVideoPager extends VideoPager {
             : JSON.parse(http.GET(
                 url,
                 {
-                    Authorization: `Bearer ${token}`,
+                    Authorization: `Bearer ${state.token}`,
                     "User-Agent": USER_AGENT,
                     Host: "content.api.nebula.app"
                 },
@@ -722,7 +715,7 @@ class ContentRecommendationsPager extends VideoPager {
         const json = JSON.parse(http.GET(
             url,
             {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${state.token}`,
                 'User-Agent': USER_AGENT,
                 Accept: 'application/json, text/plain, */*',
                 'Nebula-App-Version': APP_VERSION,
