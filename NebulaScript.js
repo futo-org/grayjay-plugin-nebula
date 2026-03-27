@@ -253,7 +253,7 @@ source.getPlaylist = function (url) {
             })), false)
         })
     } else if (USER_PLAYLISTS_REGEX.test(url)) {
-        if (!bridge.isLoggedIn()) {
+        if (!bridge.isLoggedIn() && !state.token) {
             throw new ScriptLoginRequiredException("Nebula user playlists are only available after login")
         }
         const playlistType = url.match(USER_PLAYLISTS_REGEX)[1]
