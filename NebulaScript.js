@@ -459,7 +459,7 @@ function getSavedClasses() {
     let next = response.next
     while (next !== null) {
         const response = JSON.parse(http.GET(
-            url,
+            next,
             {
                 Authorization: `Bearer ${state.token}`
             },
