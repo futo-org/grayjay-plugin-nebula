@@ -7,7 +7,7 @@
     "sourceUrl": "https://plugins.grayjay.app/Nebula/NebulaConfig.json",
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/nebula",
     "scriptUrl": "./NebulaScript.js",
-    "version": 16,
+    "version": 17,
     "iconUrl": "./NebulaIcon.png",
     "id": "9d703ff5-c556-4962-a990-4f000829cb87",
     "scriptSignature": "",
@@ -48,6 +48,9 @@
         }
     ],
     "changelog": {
+        "17": [
+            "Fix: Playback on desktop;"
+        ],
         "16": [
             "Fix: playing content requiring login when already logged-in;",
             "Fix: Handle channels without banners;",
