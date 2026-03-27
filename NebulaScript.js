@@ -117,7 +117,7 @@ source.getChannelPlaylists = function (url) {
                     new PlatformID(PLATFORM, slug, plugin.config.id, PLATFORM_CLAIMTYPE),
                     response.title,
                     `${BASE_URL}${response.slug}`,
-                    response.images.avatar.src
+                    response.images?.avatar?.src
                 ),
                 url: `https://content.api.nebula.app/video_playlists/${playlist.id}/video_episodes/`,
                 thumbnail: response.images?.featured?.src || response.images?.avatar?.src
@@ -814,27 +814,35 @@ function contentToPlatformVideoDetails(c, manifest_url) {
             [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })],
             [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url, language: 'en' })]
         )
-        pvd.subtitles = [{
+        const subtitleEntry = {
             name: "English",
             format: "text/vtt",
             getSubtitles() {
                 const manifestResponse = http.GET(manifest_url, {}, false)
                 const url = manifestResponse.url
 
-                const prefix = url.match(/^(https:\/\/starlight\.nebula\.tv\/.*\/).*\.m3u8$/)[1]
+                const prefixMatch = url.match(/^(https:\/\/starlight\.nebula\.tv\/.*\/).*\.m3u8$/)
+                if (!prefixMatch) return null
+
+                const prefix = prefixMatch[1]
 
                 const matchResult = manifestResponse.body.match(/(subtitles\/en.*\/)media\.[a-z0-9]{12}\.m3u8/)
+                if (!matchResult) return null
+
                 const nextUrl = prefix + matchResult[0]
-                const intermediateResponse = callUrl(
+                const vttMatch = callUrl(
                     nextUrl,
                     false,
                     false
-                ).match(/main\.[a-z0-9]{12}\.vtt/)[0]
-                const nextNextUrl = prefix + matchResult[1] + intermediateResponse
+                ).match(/main\.[a-z0-9]{12}\.vtt/)
+                if (!vttMatch) return null
+
+                const nextNextUrl = prefix + matchResult[1] + vttMatch[0]
 
                 return callUrl(nextNextUrl, false, false)
             }
-        }]
+        }
+        pvd.subtitles = [subtitleEntry]
     }
     return pvd
 }
