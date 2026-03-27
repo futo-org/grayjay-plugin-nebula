@@ -7,7 +7,7 @@
     "sourceUrl": "https://plugins.grayjay.app/Nebula/NebulaConfig.json",
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/nebula",
     "scriptUrl": "./NebulaScript.js",
-    "version": 14,
+    "version": 15,
     "iconUrl": "./NebulaIcon.png",
     "id": "9d703ff5-c556-4962-a990-4f000829cb87",
     "scriptSignature": "",
@@ -48,13 +48,16 @@
         }
     ],
     "changelog": {
-        "13" : [
-            "Fix importing long watch later and saved episodes playlists"
+        "15": [
+            "Fix: Missing audio in some downloads;"
         ],
-        "14" : [
+        "14": [
             "Add support for content recommendations;",
             "Fix channel links in the channel's About tab;",
             "Use the channel's banner image or avatar as the thumbnail for channel playlists;"
+        ],
+        "13": [
+            "Fix importing long watch later and saved episodes playlists"
         ]
     }
 }
