@@ -16,20 +16,24 @@ const CHANNEL_REGEX = /^https:\/\/nebula\.tv\/([a-zA-Z0-9-_]+)\/?$/
 const HARDCODED_ZERO = 0
 //#endregion
 
-let token
 let local_settings
+
+let state = {
+    token: null
+}
 
 //#region source methods
 source.enable = function (_config, settings, savedState) {
     local_settings = settings
-    if (!savedState) {
-        token = getToken()
-    } else {
-        token = savedState
+    if (savedState) {
+        state = JSON.parse(savedState)
+    }
+    if (!state.token) {
+        state.token = getToken()
     }
 }
 source.saveState = function () {
-    return token
+    return JSON.stringify(state)
 }
 source.getHome = function () {
     return new HomePager({ next: null })
@@ -83,7 +87,7 @@ source.getChannel = function (url) {
         id: new PlatformID(PLATFORM, j.id, plugin.config.id, PLATFORM_CLAIMTYPE),
         name: j.title,
         thumbnail: j.images !== undefined ? j.images.avatar.src : j.assets["stripped-original"],
-        banner: j.images?.banner.src,
+        banner: j.images?.banner?.src,
         subscribers: -1,
         description: j.description,
         url: `${BASE_URL}${login}`,
@@ -113,7 +117,7 @@ source.getChannelPlaylists = function (url) {
                     new PlatformID(PLATFORM, slug, plugin.config.id, PLATFORM_CLAIMTYPE),
                     response.title,
                     `${BASE_URL}${response.slug}`,
-                    response.images.avatar.src
+                    response.images?.avatar?.src
                 ),
                 url: `https://content.api.nebula.app/video_playlists/${playlist.id}/video_episodes/`,
                 thumbnail: response.images?.featured?.src || response.images?.avatar?.src
@@ -135,18 +139,12 @@ source.isContentDetailsUrl = function (url) {
     return CONTENT_REGEX.test(url) || EPISODE_REGEX.test(url) || CLASS_LESSON_REGEX.test(url)
 }
 source.getContentDetails = function (url) {
-    const contentType = CONTENT_REGEX.test(url)
-        ? "video"
-        : (EPISODE_REGEX.test(url)
-            ? "episode"
-            : "lesson")
-
     /** @type {import("./types.d.ts".ContentDetail)} */
     const j = downloadContentDetails(url)
 
-    const manifest_url = contentType === "video"
-        ? `https://content.api.nebula.app/video_episodes/${j.id}/manifest.m3u8?token=${token}&app_version=${APP_VERSION}&platform=web`
-        : `https://content.api.nebula.app/lessons/${j.id}/manifest.m3u8?token=${token}&app_version=${APP_VERSION}&platform=web`
+    const manifest_url = j.type === "lesson"
+        ? `https://content.api.nebula.app/lessons/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
+        : `https://content.api.nebula.app/video_episodes/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
 
     // callUrl(manifest_url, false, false) // this request verifies that the user has access to watch the video. If the user does not have access, the error checking in the callUrl method will throw an exception
 
@@ -165,7 +163,7 @@ source.getUserSubscriptions = function () {
     let response = JSON.parse(http.GET(
         "https://content.api.nebula.app/video_channels/?following=true&ordering=-follow",
         {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${state.token}`
         },
         false
     ).body)
@@ -175,7 +173,7 @@ source.getUserSubscriptions = function () {
         response = JSON.parse(http.GET(
             response.next,
             {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${state.token}`
             },
             false
         ).body)
@@ -185,7 +183,7 @@ source.getUserSubscriptions = function () {
     response = JSON.parse(http.GET(
         "https://content.api.nebula.app/podcast_channels/?following=true&ordering=-follow",
         {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${state.token}`
         },
         false
     ).body)
@@ -195,7 +193,7 @@ source.getUserSubscriptions = function () {
         response = JSON.parse(http.GET(
             response.next,
             {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${state.token}`
             },
             false
         ).body)
@@ -249,13 +247,13 @@ source.getPlaylist = function (url) {
             })), false)
         })
     } else if (USER_PLAYLISTS_REGEX.test(url)) {
-        if (!bridge.isLoggedIn()) {
+        if (!bridge.isLoggedIn() && !state.token) {
             throw new ScriptLoginRequiredException("Nebula user playlists are only available after login")
         }
         const playlistType = url.match(USER_PLAYLISTS_REGEX)[1]
         const userData = JSON.parse(http.GET(
             "https://users.api.nebula.app/api/v1/auth/user/",
-            { Authorization: `Bearer ${token}` },
+            { Authorization: `Bearer ${state.token}` },
             false
         ).body)
         const username = userData.name === "" ? userData.email : userData.name
@@ -280,7 +278,7 @@ source.getPlaylist = function (url) {
         const response = JSON.parse(http.GET(
             userPlaylistInfo.url,
             {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${state.token}`
             },
             false
         ).body)
@@ -291,7 +289,7 @@ source.getPlaylist = function (url) {
             const response = JSON.parse(http.GET(
                 next,
                 {
-                    Authorization: `Bearer ${token}`
+                    Authorization: `Bearer ${state.token}`
                 },
                 false
             ).body)
@@ -317,7 +315,7 @@ source.getPlaylist = function (url) {
         const playlistId = url.match(PLAYLIST_REGEX)[1]
 
         const response = callUrl(url)
-        const firstVideo = response.results[1]
+        const firstVideo = response.results[0]
         const channelResponse = callUrl(`https://content.api.nebula.app/content/${firstVideo.channel_slug}`)
         const playlist = channelResponse.playlists.find((playlist) => playlist.id === playlistId)
 
@@ -397,7 +395,7 @@ function trackProgress(url, seconds) {
         url,
         JSON.stringify({ value: seconds }),
         {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${state.token}`,
             "Content-Type": "application/json"
         },
         false)
@@ -422,7 +420,7 @@ function downloadContentDetails(url) {
         }
     }()
 
-    if (!bridge.isLoggedIn())
+    if (!bridge.isLoggedIn() && !state.token)
         throw new ScriptLoginRequiredException("Nebula videos are only available after login");
 
     const contentUrl = function () {
@@ -439,18 +437,7 @@ function downloadContentDetails(url) {
     }()
 
     /** @type {import("./types.d.ts".ContentDetail)} */
-    const j = function () {
-        switch (contentType) {
-            case "video":
-                return callUrl(contentUrl, true)
-            case "episode":
-                return JSON.parse(http.GET(contentUrl, { Authorization: `Bearer ${token}` }).body)
-            case "lesson":
-                return JSON.parse(http.GET(contentUrl, { Authorization: `Bearer ${token}` }).body)
-            default:
-                throw new ScriptException("unreachable")
-        }
-    }()
+    const j = JSON.parse(http.GET(contentUrl, { Authorization: `Bearer ${state.token}` }).body)
     return j
 }
 function getSavedClasses() {
@@ -458,7 +445,7 @@ function getSavedClasses() {
     const response = JSON.parse(http.GET(
         url,
         {
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${state.token}`
         },
         false
     ).body)
@@ -466,9 +453,9 @@ function getSavedClasses() {
     let next = response.next
     while (next !== null) {
         const response = JSON.parse(http.GET(
-            url,
+            next,
             {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${state.token}`
             },
             false
         ).body)
@@ -611,7 +598,7 @@ class ChannelVideoPager extends VideoPager {
             : JSON.parse(http.GET(
                 url,
                 {
-                    Authorization: `Bearer ${token}`,
+                    Authorization: `Bearer ${state.token}`,
                     "User-Agent": USER_AGENT,
                     Host: "content.api.nebula.app"
                 },
@@ -722,7 +709,7 @@ class ContentRecommendationsPager extends VideoPager {
         const json = JSON.parse(http.GET(
             url,
             {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${state.token}`,
                 'User-Agent': USER_AGENT,
                 Accept: 'application/json, text/plain, */*',
                 'Nebula-App-Version': APP_VERSION,
@@ -757,7 +744,7 @@ function searchChannelToPlatformChannel(c) {
         id: new PlatformID(PLATFORM, c.id, plugin.config.id, PLATFORM_CLAIMTYPE),
         name: c.title,
         thumbnail: c.images === undefined ? c.assets["stripped-original"] : c.images.avatar.src,
-        banner: c.images?.banner.src,
+        banner: c.images?.banner?.src,
         subscribers: -1,
         description: c.description,
         url: `${BASE_URL}${c.slug}`,
@@ -812,7 +799,7 @@ function contentToPlatformVideoDetails(c, manifest_url) {
     pvd.description = c.description === undefined ? c.class.description : c.description
     // Nebula is English-only: no language metadata in the API, and HLS
     // manifests contain a single audio track with no alternate languages.
-    if (c.images === undefined) {
+    if (c.type === "podcast_episode" || c.episode_url) {
         pvd.video = new UnMuxVideoSourceDescriptor([], [new AudioUrlSource({
             name: "English",
             bitrate: 128000,
@@ -827,27 +814,35 @@ function contentToPlatformVideoDetails(c, manifest_url) {
             [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })],
             [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url, language: 'en' })]
         )
-        pvd.subtitles = [{
+        const subtitleEntry = {
             name: "English",
             format: "text/vtt",
             getSubtitles() {
                 const manifestResponse = http.GET(manifest_url, {}, false)
                 const url = manifestResponse.url
 
-                const prefix = url.match(/^(https:\/\/starlight\.nebula\.tv\/.*\/).*\.m3u8$/)[1]
+                const prefixMatch = url.match(/^(https:\/\/starlight\.nebula\.tv\/.*\/).*\.m3u8$/)
+                if (!prefixMatch) return null
+
+                const prefix = prefixMatch[1]
 
                 const matchResult = manifestResponse.body.match(/(subtitles\/en.*\/)media\.[a-z0-9]{12}\.m3u8/)
+                if (!matchResult) return null
+
                 const nextUrl = prefix + matchResult[0]
-                const intermediateResponse = callUrl(
+                const vttMatch = callUrl(
                     nextUrl,
                     false,
                     false
-                ).match(/main\.[a-z0-9]{12}\.vtt/)[0]
-                const nextNextUrl = prefix + matchResult[1] + intermediateResponse
+                ).match(/main\.[a-z0-9]{12}\.vtt/)
+                if (!vttMatch) return null
+
+                const nextNextUrl = prefix + matchResult[1] + vttMatch[0]
 
                 return callUrl(nextNextUrl, false, false)
             }
-        }]
+        }
+        pvd.subtitles = [subtitleEntry]
     }
     return pvd
 }
