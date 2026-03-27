@@ -174,6 +174,7 @@ type Content = {
     engagement?: any
     attributes: string[]
     share_url: string
+    episode_url?: string
     primary_channel?: string
     zype_id?: string
 }

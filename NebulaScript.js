@@ -139,18 +139,12 @@ source.isContentDetailsUrl = function (url) {
     return CONTENT_REGEX.test(url) || EPISODE_REGEX.test(url) || CLASS_LESSON_REGEX.test(url)
 }
 source.getContentDetails = function (url) {
-    const contentType = CONTENT_REGEX.test(url)
-        ? "video"
-        : (EPISODE_REGEX.test(url)
-            ? "episode"
-            : "lesson")
-
     /** @type {import("./types.d.ts".ContentDetail)} */
     const j = downloadContentDetails(url)
 
-    const manifest_url = contentType === "video"
-        ? `https://content.api.nebula.app/video_episodes/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
-        : `https://content.api.nebula.app/lessons/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
+    const manifest_url = j.type === "lesson"
+        ? `https://content.api.nebula.app/lessons/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
+        : `https://content.api.nebula.app/video_episodes/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
 
     // callUrl(manifest_url, false, false) // this request verifies that the user has access to watch the video. If the user does not have access, the error checking in the callUrl method will throw an exception
 
@@ -805,7 +799,7 @@ function contentToPlatformVideoDetails(c, manifest_url) {
     pvd.description = c.description === undefined ? c.class.description : c.description
     // Nebula is English-only: no language metadata in the API, and HLS
     // manifests contain a single audio track with no alternate languages.
-    if (c.images === undefined) {
+    if (c.type === "podcast_episode" || c.episode_url) {
         pvd.video = new UnMuxVideoSourceDescriptor([], [new AudioUrlSource({
             name: "English",
             bitrate: 128000,
