@@ -20,50 +20,48 @@ const IS_DESKTOP = bridge.buildPlatform === "desktop";
 let local_settings
 
 let state = {
-    token: null
+    token: null,
+    lastContentDetails: { url: null, value: null }
 }
 
 //#region source methods
 source.enable = function (_config, settings, savedState) {
     local_settings = settings
     if (savedState) {
-        state = JSON.parse(savedState)
+        const saved = JSON.parse(savedState)
+        if (saved.token) state.token = saved.token
     }
     if (!state.token) {
         state.token = getToken()
     }
 }
 source.saveState = function () {
-    return JSON.stringify(state)
+    // Only the token needs to persist; settings come from enable() and lastContentDetails is a runtime cache.
+    return JSON.stringify({ token: state.token })
 }
 source.getHome = function () {
     return new HomePager({ next: null })
 }
 source.getSearchCapabilities = () => {
+    // Nebula search is relevance-ranked: it honors no ordering or filters (its web app sends none).
     return {
         types: [Type.Feed.Mixed],
-        sorts: [Type.Order.Chronological, 'Oldest'],
-        filters: [
-            {
-                id: 'exclusivity',
-                name: 'Exclusivity',
-                isMultiSelect: true,
-                filters: [
-                    { id: 'plus', name: 'Plus', value: 'plus' },
-                    { id: 'first', name: 'First', value: 'first' },
-                    { id: 'original', name: 'Original', value: 'original' },
-                ],
-            },
-        ],
+        sorts: [],
+        filters: [],
     }
 }
 source.search = function (query, type, order, filters) {
-    return new SearchPager({ q: query, page: 1 })
+    const encodedQuery = encodeURIComponent(query)
+    return new SearchPager({
+        videoNext: `https://content.api.nebula.app/video_episodes/search/?include=&q=${encodedQuery}`,
+        podcastNext: `https://content.api.nebula.app/podcast_episodes/search/?q=${encodedQuery}`
+    })
 }
 source.searchChannels = function (query) {
+    const encodedQuery = encodeURIComponent(query)
     return new SearchPagerChannels({
-        next: `https://content.api.nebula.app/video_channels/search/?include=&q=${query}`,
-        podcastNext: `https://content.api.nebula.app/podcast_channels/search/?q=${query}`
+        next: `https://content.api.nebula.app/video_channels/search/?include=&q=${encodedQuery}`,
+        podcastNext: `https://content.api.nebula.app/podcast_channels/search/?q=${encodedQuery}`
     })
 }
 source.isChannelUrl = function (url) {
@@ -269,7 +267,11 @@ source.getPlaylist = function (url) {
     }
 }
 source.searchPlaylists = function (query) {
-    return new ClassSearchPager(query)
+    const encodedQuery = encodeURIComponent(query)
+    return new SearchPlaylistsPager({
+        classNext: `https://content.api.nebula.app/classes/search/?q=${encodedQuery}`,
+        seriesNext: `https://content.api.nebula.app/video_playlists/search/?q=${encodedQuery}&video_playlist_type=miniseries`
+    })
 }
 source.getUserPlaylists = function () {
     return [
@@ -336,6 +338,9 @@ function downloadContentDetails(url) {
     if (!bridge.isLoggedIn() && !state.token)
         throw new ScriptLoginRequiredException("Nebula videos are only available after login")
 
+    // Playback opens call this 3x for the same url (details + tracker + recommendations); memoize the last lookup.
+    if (state.lastContentDetails.url === url) return state.lastContentDetails.value
+
     let contentUrl
     if (CONTENT_REGEX.test(url)) {
         // video: /videos/<slug>
@@ -351,7 +356,8 @@ function downloadContentDetails(url) {
     }
 
     /** @type {import("./types.d.ts".ContentDetail)} */
-    return getJson(contentUrl, { auth: true })
+    state.lastContentDetails = { url, value: getJson(contentUrl, { auth: true }) }
+    return state.lastContentDetails.value
 }
 function getSavedClasses() {
     const classes = collectPages("https://content.api.nebula.app/classes/?following=true&include=lessons")
@@ -678,15 +684,27 @@ class SearchPager extends VideoPager {
      * @param {import("./types.d.ts").SearchContext} context
      */
     constructor(context) {
-        /** @type {import("./types.d.ts").SearchResponse}*/
-        const response = getJson(`https://content.api.nebula.app/video_episodes/search/?include=&page=${context.page}&q=${context.q}`)
+        const pending = []
+        if (context.videoNext !== null) pending.push({ key: "video", url: context.videoNext })
+        if (context.podcastNext !== null) pending.push({ key: "podcast", url: context.podcastNext })
 
-        const results = response.results.map((content) => contentToPlatformVideo(content))
+        /** @type {import("./types.d.ts").SearchResponse[]} */
+        const responses = batchGetJson(pending)
 
-        super(results, response.next !== null, context)
+        const results = []
+        pending.forEach((request, index) => {
+            const response = responses[index]
+            results.push(...response.results.map((content) => contentToPlatformVideo(content)))
+            if (request.key === "video") {
+                context.videoNext = response.next
+            } else {
+                context.podcastNext = response.next
+            }
+        })
+
+        super(results, context.videoNext !== null || context.podcastNext !== null, context)
     }
     nextPage() {
-        this.context.page++
         return new SearchPager(this.context)
     }
 }
@@ -720,18 +738,41 @@ class SearchPagerChannels extends ChannelPager {
         return new SearchPagerChannels(this.context)
     }
 }
-class ClassSearchPager extends PlaylistPager {
-    constructor(query) {
-        const response = getJson(`https://content.api.nebula.app/classes/search/?q=${query}`)
-        const results = response.results.map(classToPlaylist)
-        super(results, response.next !== null)
-        this.next = response.next
+/**
+ * Fetches one page of merged class + miniseries playlist search results,
+ * advancing the context's classNext/seriesNext cursors.
+ * @param {{classNext: string|null, seriesNext: string|null}} context
+ * @returns {PlatformPlaylist[]}
+ */
+function fetchSearchPlaylistsPage(context) {
+    const pending = []
+    if (context.classNext !== null) pending.push({ key: "class", url: context.classNext })
+    if (context.seriesNext !== null) pending.push({ key: "series", url: context.seriesNext })
+
+    const responses = batchGetJson(pending)
+
+    const results = []
+    pending.forEach((request, index) => {
+        const response = responses[index]
+        if (request.key === "class") {
+            results.push(...response.results.map(classToPlaylist))
+            context.classNext = response.next
+        } else {
+            results.push(...response.results.map(seriesToPlaylist))
+            context.seriesNext = response.next
+        }
+    })
+    return results
+}
+class SearchPlaylistsPager extends PlaylistPager {
+    constructor(context) {
+        const results = fetchSearchPlaylistsPage(context)
+        super(results, context.classNext !== null || context.seriesNext !== null)
+        this.context = context
     }
     nextPage() {
-        const response = getJson(this.next)
-        this.next = response.next
-        this.results = response.results.map(classToPlaylist)
-        this.hasMore = response.next !== null
+        this.results = fetchSearchPlaylistsPage(this.context)
+        this.hasMore = this.context.classNext !== null || this.context.seriesNext !== null
         return this
     }
     hasMorePagers() {
@@ -889,5 +930,44 @@ function classToPlaylist(nebulaClass) {
         videoCount: nebulaClass.lesson_count,
         thumbnail: nebulaClass.images.featured.src
     })
+}
+/**
+ * Converts a video_playlists (miniseries) search result to a platform playlist
+ * @param {import("./types.d.ts").Content} series
+ * @returns {PlatformPlaylist}
+ */
+function seriesToPlaylist(series) {
+    return new PlatformPlaylist({
+        id: new PlatformID(PLATFORM, series.id, plugin.config.id, PLATFORM_CLAIMTYPE),
+        name: series.title,
+        author: new PlatformAuthorLink(
+            new PlatformID(PLATFORM, series.video_channel_slug, plugin.config.id, PLATFORM_CLAIMTYPE),
+            series.video_channel_title,
+            `${BASE_URL}${series.video_channel_slug}`
+        ),
+        url: series.video_episodes_url,
+        videoCount: series.episodes_count,
+        thumbnail: series.images?.cover?.src
+    })
+}
+//#endregion
+
+//#region tests
+// Custom GrayjayTests entry (merged with the engine's standard tests at test time; unused in normal runtime).
+var GrayjayTests = {
+    Search: {
+        name: "Search",
+        description: "Searches videos/podcasts and playlists/series for the configured query, expecting results",
+        requirements: ["DEFINED"],
+        test(testContext) {
+            const query = testContext.metadata.Search.query
+
+            const content = testContext.runSourceMethod("search", [query, null, null, null]).results
+            if (content.length === 0) throw "search returned no results for: " + query
+
+            const playlists = testContext.runSourceMethod("searchPlaylists", [query]).results
+            if (playlists.length === 0) throw "searchPlaylists returned no results for: " + query
+        }
+    }
 }
 //#endregion
