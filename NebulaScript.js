@@ -13,6 +13,8 @@ const USER_PLAYLISTS_REGEX = /^https:\/\/nebula\.tv\/library\/(saved-episodes|wa
 const PLAYLIST_REGEX = /^https:\/\/content\.api\.nebula\.app\/video_playlists\/(video_playlist:[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12})\/video_episodes\/$/
 const CHANNEL_REGEX = /^https:\/\/nebula\.tv\/([a-zA-Z0-9-_]+)\/?$/
 
+const IS_DESKTOP = bridge.buildPlatform === "desktop";
+
 const HARDCODED_ZERO = 0
 //#endregion
 
@@ -810,10 +812,19 @@ function contentToPlatformVideoDetails(c, manifest_url) {
             language: "en"
         })])
     } else {
-        pvd.video = new UnMuxVideoSourceDescriptor(
-            [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })],
-            [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url, language: 'en' })]
-        )
+
+        if (IS_DESKTOP) {
+            pvd.video = new VideoSourceDescriptor(
+                [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })]
+            )
+        } else {
+            // workaround on mobile where some downloads (from playlists, watch later) don't have audio. However this creates issues on desktop playing content;
+            pvd.video = new UnMuxVideoSourceDescriptor(
+                [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })],
+                [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url, language: 'en' })]
+            )
+        }
+
         const subtitleEntry = {
             name: "English",
             format: "text/vtt",
