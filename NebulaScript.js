@@ -144,11 +144,16 @@ source.getContentDetails = function (url) {
 }
 
 source.getUserSubscriptions = function () {
-    // TODO this isn't done in parallel but that is ok because this is an uncommon workflow
-    const channels = [
-        ...collectPages("https://content.api.nebula.app/video_channels/?following=true&ordering=-follow"),
-        ...collectPages("https://content.api.nebula.app/podcast_channels/?following=true&ordering=-follow")
+    const endpoints = [
+        "https://content.api.nebula.app/video_channels/?following=true&ordering=-follow",
+        "https://content.api.nebula.app/podcast_channels/?following=true&ordering=-follow"
     ]
+    // First page of both feeds in parallel; paginate any remainder sequentially
+    const channels = []
+    batchGetJson(endpoints.map((url) => ({ url, auth: true }))).forEach((page) => {
+        channels.push(...page.results)
+        if (page.next !== null) channels.push(...collectPages(page.next))
+    })
     return channels.map((channel) => `${BASE_URL}${channel.slug}`)
 }
 source.isPlaylistUrl = function (url) {
@@ -461,6 +466,19 @@ function collectPages(url) {
     return results
 }
 /**
+ * Fires multiple GETs in parallel and returns their parsed JSON bodies, in request order.
+ * @param {{url: string, auth?: boolean}[]} requests
+ * @returns {any[]}
+ */
+function batchGetJson(requests) {
+    const builder = http.batch()
+    for (const request of requests) {
+        const headers = request.auth ? authHeaders(request.url) : standardHeaders(request.url)
+        builder.GET(request.url, headers, false)
+    }
+    return builder.execute().map((response) => parseJson(response))
+}
+/**
  * Extracts the URI of the first EXT-X-MEDIA entry of the given type from an HLS master manifest
  * @param {string} manifestBody
  * @param {string} type e.g. "SUBTITLES"
@@ -662,24 +680,23 @@ class SearchPagerChannels extends ChannelPager {
      * @param {import("./types.d.ts").SearchChannelContext} context the context
      */
     constructor(context) {
+        const pending = []
+        if (context.next !== null) pending.push({ key: "video", url: context.next })
+        if (context.podcastNext !== null) pending.push({ key: "podcast", url: context.podcastNext })
+
+        /** @type {import("./types.d.ts").SearchChannelResponse[]} */
+        const responses = batchGetJson(pending)
+
         const results = []
-
-        if (context.next !== null) {
-            /** @type {import("./types.d.ts").SearchChannelResponse} */
-            const response = getJson(context.next)
-
+        pending.forEach((request, index) => {
+            const response = responses[index]
             results.push(...response.results.map((channel) => searchChannelToPlatformChannel(channel)))
-
-            context.next = response.next
-        }
-
-        if (context.podcastNext !== null) {
-            const response = getJson(context.podcastNext)
-
-            context.podcastNext = response.next
-
-            results.push(...response.results.map((channel) => searchChannelToPlatformChannel(channel)))
-        }
+            if (request.key === "video") {
+                context.next = response.next
+            } else {
+                context.podcastNext = response.next
+            }
+        })
 
         super(results, context.podcastNext !== null || context.next !== null, context)
     }
