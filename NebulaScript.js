@@ -3,6 +3,7 @@ const APP_VERSION = '25.6.0'
 const BASE_URL = 'https://nebula.tv/'
 const PLATFORM = 'Nebula'
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
+const ACCEPT_JSON = 'application/json, text/plain, */*'
 const PLATFORM_CLAIMTYPE = 19;
 
 const CONTENT_REGEX = /^https:\/\/nebula\.tv\/videos\/([a-zA-Z0-9-_]+)\/?$/
@@ -14,8 +15,6 @@ const PLAYLIST_REGEX = /^https:\/\/content\.api\.nebula\.app\/video_playlists\/(
 const CHANNEL_REGEX = /^https:\/\/nebula\.tv\/([a-zA-Z0-9-_]+)\/?$/
 
 const IS_DESKTOP = bridge.buildPlatform === "desktop";
-
-const HARDCODED_ZERO = 0
 //#endregion
 
 let local_settings
@@ -40,9 +39,6 @@ source.saveState = function () {
 source.getHome = function () {
     return new HomePager({ next: null })
 }
-// source.searchSuggestions = function (query) {
-//     return []
-// }
 source.getSearchCapabilities = () => {
     return {
         types: [Type.Feed.Mixed],
@@ -64,9 +60,6 @@ source.getSearchCapabilities = () => {
 source.search = function (query, type, order, filters) {
     return new SearchPager({ q: query, page: 1 })
 }
-// source.getSearchChannelContentsCapabilities = function () {
-//     return { types: [Type.Feed.Mixed], sorts: [Type.Order.Chronological], filters: [] }
-// }
 source.searchChannels = function (query) {
     return new SearchPagerChannels({
         next: `https://content.api.nebula.app/video_channels/search/?include=&q=${query}`,
@@ -77,39 +70,31 @@ source.isChannelUrl = function (url) {
     return CHANNEL_REGEX.test(url)
 }
 source.getChannel = function (url) {
-    const login = url
-        .split('/')
-        .filter((v) => v !== '')
-        .pop()
+    const login = lastPathSegment(url)
 
     /** @type {import("./types.d.ts").Channel} */
-    const j = callUrl(`https://content.api.nebula.app/content/${login}`)
+    const channel = getJson(`https://content.api.nebula.app/content/${login}`)
 
     return new PlatformChannel({
-        id: new PlatformID(PLATFORM, j.id, plugin.config.id, PLATFORM_CLAIMTYPE),
-        name: j.title,
-        thumbnail: j.images !== undefined ? j.images.avatar.src : j.assets["stripped-original"],
-        banner: j.images?.banner?.src,
+        id: new PlatformID(PLATFORM, channel.id, plugin.config.id, PLATFORM_CLAIMTYPE),
+        name: channel.title,
+        thumbnail: channel.images !== undefined ? channel.images.avatar.src : channel.assets["stripped-original"],
+        banner: channel.images?.banner?.src,
         subscribers: -1,
-        description: j.description,
+        description: channel.description,
         url: `${BASE_URL}${login}`,
-        links: getChannelLinks(j),
+        links: getChannelLinks(channel),
     })
 }
 source.getChannelContents = function (url) {
-    const login = url
-        .split('/')
-        .filter((v) => v !== '')
-        .pop()
-
     /** @type {import("./types.d.ts").Channel} */
-    const j = callUrl(`https://content.api.nebula.app/content/${login}`)
+    const channel = getJson(`https://content.api.nebula.app/content/${lastPathSegment(url)}`)
 
-    return new ChannelVideoPager({ next: null, id: j.id, type: j.type })
+    return new ChannelVideoPager({ next: null, id: channel.id, type: channel.type })
 }
 source.getChannelPlaylists = function (url) {
     const slug = url.match(CHANNEL_REGEX)[1]
-    const response = callUrl(`https://content.api.nebula.app/content/${slug}`)
+    const response = getJson(`https://content.api.nebula.app/content/${slug}`)
     return new PlaylistPager(
         response.playlists?.map(function (playlist) {
             return new PlatformPlaylist({
@@ -142,18 +127,17 @@ source.isContentDetailsUrl = function (url) {
 }
 source.getContentDetails = function (url) {
     /** @type {import("./types.d.ts".ContentDetail)} */
-    const j = downloadContentDetails(url)
+    const content = downloadContentDetails(url)
 
-    const manifest_url = j.type === "lesson"
-        ? `https://content.api.nebula.app/lessons/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
-        : `https://content.api.nebula.app/video_episodes/${j.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
+    const manifestType = content.type === "lesson" ? "lessons" : "video_episodes"
+    const manifest_url = `https://content.api.nebula.app/${manifestType}/${content.id}/manifest.m3u8?token=${state.token}&app_version=${APP_VERSION}&platform=web`
 
-    // callUrl(manifest_url, false, false) // this request verifies that the user has access to watch the video. If the user does not have access, the error checking in the callUrl method will throw an exception
+    // Access isn't pre-verified here; a gated video surfaces its error when getSubtitles/playback fetches the manifest
 
-    const details = contentToPlatformVideoDetails(j, manifest_url)
+    const details = contentToPlatformVideoDetails(content, manifest_url)
 
-    details.getContentRecommendations = function (url) {
-        return new ContentRecommendationsPager({ videoId: j.id, next: null })
+    details.getContentRecommendations = function () {
+        return new ContentRecommendationsPager({ videoId: content.id, next: null })
     }
 
     return details;
@@ -161,54 +145,12 @@ source.getContentDetails = function (url) {
 
 source.getUserSubscriptions = function () {
     // TODO this isn't done in parallel but that is ok because this is an uncommon workflow
-    /** @type {import("./types.d.ts").SubscriptionResponse} */
-    let response = JSON.parse(http.GET(
-        "https://content.api.nebula.app/video_channels/?following=true&ordering=-follow",
-        {
-            Authorization: `Bearer ${state.token}`
-        },
-        false
-    ).body)
-
-    const results = response.results.map((c) => `${BASE_URL}${c.slug}`)
-    while (response.next !== null) {
-        response = JSON.parse(http.GET(
-            response.next,
-            {
-                Authorization: `Bearer ${state.token}`
-            },
-            false
-        ).body)
-        results.push(...response.results.map((c) => `${BASE_URL}${c.slug}`))
-    }
-    /** @type {import("./types.d.ts").SubscriptionResponse} */
-    response = JSON.parse(http.GET(
-        "https://content.api.nebula.app/podcast_channels/?following=true&ordering=-follow",
-        {
-            Authorization: `Bearer ${state.token}`
-        },
-        false
-    ).body)
-
-    results.push(...response.results.map((c) => `${BASE_URL}${c.slug}`))
-    while (response.next !== null) {
-        response = JSON.parse(http.GET(
-            response.next,
-            {
-                Authorization: `Bearer ${state.token}`
-            },
-            false
-        ).body)
-        results.push(...response.results.map((c) => `${BASE_URL}${c.slug}`))
-    }
-    return results
+    const channels = [
+        ...collectPages("https://content.api.nebula.app/video_channels/?following=true&ordering=-follow"),
+        ...collectPages("https://content.api.nebula.app/podcast_channels/?following=true&ordering=-follow")
+    ]
+    return channels.map((channel) => `${BASE_URL}${channel.slug}`)
 }
-// source.getComments = function (url) {
-//     return new CommentPager([], false, {}) //Not implemented
-// }
-// source.getSubComments = function (comment) {
-//     return new CommentPager([], false, {}) //Not implemented
-// }
 source.isPlaylistUrl = function (url) {
     return PLAYLIST_REGEX.test(url)
         || USER_PLAYLISTS_REGEX.test(url)
@@ -217,7 +159,7 @@ source.isPlaylistUrl = function (url) {
 source.getPlaylist = function (url) {
     if (CLASS_PLAYLIST_REGEX.test(url)) {
         const classId = url.match(CLASS_PLAYLIST_REGEX)[1]
-        const classMetadata = callUrl(`https://content.api.nebula.app/content/${classId}/`)
+        const classMetadata = getJson(`https://content.api.nebula.app/content/${classId}/`)
         return new PlatformPlaylistDetails({
             id: new PlatformID(
                 PLATFORM,
@@ -236,7 +178,7 @@ source.getPlaylist = function (url) {
                 classMetadata.class.creator,
                 classMetadata.class.creator
             ),
-            datetime: parseInt(new Date(classMetadata.class.published_at).getTime() / 1000),
+            datetime: unixSeconds(classMetadata.class.published_at),
             url,
             videoCount: classMetadata.class.lesson_count,
             thumbnail: classMetadata.class.images.featured.src,
@@ -253,12 +195,13 @@ source.getPlaylist = function (url) {
             throw new ScriptLoginRequiredException("Nebula user playlists are only available after login")
         }
         const playlistType = url.match(USER_PLAYLISTS_REGEX)[1]
-        const userData = JSON.parse(http.GET(
-            "https://users.api.nebula.app/api/v1/auth/user/",
-            { Authorization: `Bearer ${state.token}` },
-            false
-        ).body)
-        const username = userData.name === "" ? userData.email : userData.name
+        // The user-account endpoint needs the login session (bridge auth), not just the bearer token.
+        // Username is only the playlist author label, so a failure here must not break playlist import.
+        let username = "Nebula User"
+        try {
+            const userData = getJson("https://users.api.nebula.app/api/v1/auth/user/", { auth: true, useLogin: true })
+            username = userData.name === "" ? userData.email : userData.name
+        } catch (_error) { /* username unavailable; keep the fallback */ }
         const userPlaylistInfo = function () {
             switch (playlistType) {
                 case "watch-later": {
@@ -277,27 +220,8 @@ source.getPlaylist = function (url) {
                     throw new ScriptException("unreachable")
             }
         }()
-        const response = JSON.parse(http.GET(
-            userPlaylistInfo.url,
-            {
-                Authorization: `Bearer ${state.token}`
-            },
-            false
-        ).body)
-        const results = response.results
-        let next = response.next
-        // we don't need to paginate because watch later and saved episodes should only be used during playlist import
-        while (next !== null) {
-            const response = JSON.parse(http.GET(
-                next,
-                {
-                    Authorization: `Bearer ${state.token}`
-                },
-                false
-            ).body)
-            next = response.next
-            results.push(...response.results)
-        }
+        // watch-later / saved-episodes are paginated; collect all pages (used during playlist import)
+        const results = collectPages(userPlaylistInfo.url)
         return new PlatformPlaylistDetails({
             id: new PlatformID(PLATFORM, playlistType, plugin.config.id, PLATFORM_CLAIMTYPE),
             name: userPlaylistInfo.name,
@@ -316,9 +240,9 @@ source.getPlaylist = function (url) {
     } else {
         const playlistId = url.match(PLAYLIST_REGEX)[1]
 
-        const response = callUrl(url)
+        const response = getJson(url)
         const firstVideo = response.results[0]
-        const channelResponse = callUrl(`https://content.api.nebula.app/content/${firstVideo.channel_slug}`)
+        const channelResponse = getJson(`https://content.api.nebula.app/content/${firstVideo.channel_slug}`)
         const playlist = channelResponse.playlists.find((playlist) => playlist.id === playlistId)
 
         return new PlatformPlaylistDetails({
@@ -401,113 +325,140 @@ function trackProgress(url, seconds) {
             "Content-Type": "application/json"
         },
         false)
+    log(`Nebula trackProgress PATCH ${url} -> ${response.code}`)
 }
 function downloadContentDetails(url) {
-    const contentType = CONTENT_REGEX.test(url)
-        ? "video"
-        : (EPISODE_REGEX.test(url)
-            ? "episode"
-            : "lesson")
-
-    const id = function () {
-        switch (contentType) {
-            case "video":
-                return url.match(CONTENT_REGEX)[1]
-            case "episode":
-                return url.match(EPISODE_REGEX)[1]
-            case "lesson":
-                return url.match(CLASS_LESSON_REGEX)[1]
-            default:
-                throw new ScriptException("unreachable")
-        }
-    }()
-
     if (!bridge.isLoggedIn() && !state.token)
-        throw new ScriptLoginRequiredException("Nebula videos are only available after login");
+        throw new ScriptLoginRequiredException("Nebula videos are only available after login")
 
-    const contentUrl = function () {
-        switch (contentType) {
-            case "video":
-                return `https://content.api.nebula.app/content/videos/${id}`
-            case "episode":
-                return `https://content.api.nebula.app/content/${id}`
-            case "lesson":
-                return `https://content.api.nebula.app/content/${id}/`
-            default:
-                throw new ScriptException("unreachable")
-        }
-    }()
+    let contentUrl
+    if (CONTENT_REGEX.test(url)) {
+        // video: /videos/<slug>
+        contentUrl = `https://content.api.nebula.app/content/videos/${url.match(CONTENT_REGEX)[1]}`
+    } else if (EPISODE_REGEX.test(url)) {
+        // channel episode or podcast episode: /<channel>/<slug>
+        contentUrl = `https://content.api.nebula.app/content/${url.match(EPISODE_REGEX)[1]}`
+    } else if (CLASS_LESSON_REGEX.test(url)) {
+        // class lesson: /<class>/<number>
+        contentUrl = `https://content.api.nebula.app/content/${url.match(CLASS_LESSON_REGEX)[1]}/`
+    } else {
+        throw new ScriptException("Unsupported Nebula content URL: " + url)
+    }
 
     /** @type {import("./types.d.ts".ContentDetail)} */
-    const j = JSON.parse(http.GET(contentUrl, { Authorization: `Bearer ${state.token}` }).body)
-    return j
+    return getJson(contentUrl, { auth: true })
 }
 function getSavedClasses() {
-    const url = "https://content.api.nebula.app/classes/?following=true&include=lessons"
-    const response = JSON.parse(http.GET(
-        url,
-        {
-            Authorization: `Bearer ${state.token}`
-        },
-        false
-    ).body)
-    const results = response.results
-    let next = response.next
-    while (next !== null) {
-        const response = JSON.parse(http.GET(
-            next,
-            {
-                Authorization: `Bearer ${state.token}`
-            },
-            false
-        ).body)
-        next = response.next
-        results.push(...response.results)
-    }
-    return results.map((nebulaClass) => `${nebulaClass.share_url}1?tab=lessons`)
+    const classes = collectPages("https://content.api.nebula.app/classes/?following=true&include=lessons")
+    return classes.map((nebulaClass) => `${nebulaClass.share_url}1?tab=lessons`)
 }
 /**
- * Gets the request url
- * @param {string} url the url to get
- * @param {boolean} use_authenticated if true, will use the authenticated headers
- * @param {boolean} parse if true, will parse the response as json and check for errors
- * @returns {string | Object} the response body as a string or the parsed json object
+ * Standard headers sent on every Nebula request (mirrors the web client)
+ * @param {string} url
+ * @returns {Object}
+ */
+function standardHeaders(url) {
+    return {
+        'User-Agent': USER_AGENT,
+        Accept: ACCEPT_JSON,
+        DNT: '1',
+        Origin: 'https://nebula.tv',
+        Host: url.split('/')[2]
+    }
+}
+/**
+ * Standard headers plus the bearer token and Nebula app identifiers, for authenticated API calls
+ * @param {string} url
+ * @param {Object} [extra] additional headers to merge in
+ * @returns {Object}
+ */
+function authHeaders(url, extra) {
+    return Object.assign(
+        standardHeaders(url),
+        {
+            Authorization: `Bearer ${state.token}`,
+            'Nebula-App-Version': APP_VERSION,
+            'Nebula-Platform': 'web'
+        },
+        extra ?? {}
+    )
+}
+/**
+ * Throws a descriptive exception for a failed Nebula response
+ * @param {Object} resp the http response
  * @throws {ScriptException}
  */
-function callUrl(url, use_authenticated = false, parse_response = true) {
-    const resp = http.GET(
-        url,
-        {
-            'User-Agent': USER_AGENT,
-            Accept: 'application/json, text/plain, */*',
-            DNT: '1',
-            Origin: 'https://nebula.tv',
-            Host: url.split('/')[2]
-        },
-        use_authenticated
-    )
-
-    if (!resp.isOk) {
-        // log(resp)
-        if (resp.code === 401) {
-            throw new UnavailableException('Video is only available to Nebula Subscribers')
-        }
-        else if (resp.code === 403) {
-            throw new ScriptLoginRequiredException("Nebula login may have expired, please login again, this should be mostly automatic.");
-        } else {
-            throw new ScriptException(resp.statusMessage + "(code: " + resp.code + ")");
-        }
+function checkResponse(response) {
+    if (response.isOk) return
+    if (response.code === 401) {
+        throw new UnavailableException('Video is only available to Nebula Subscribers')
     }
-
-    if (parse_response) {
-        const json = JSON.parse(resp.body)
-        if (json.errors) {
-            throw new ScriptException(json.errors[0].message)
-        }
-        return json
+    if (response.code === 403) {
+        throw new ScriptLoginRequiredException("Nebula login may have expired, please login again, this should be mostly automatic.")
     }
-
-    return resp.body
+    throw new ScriptException(`${response.statusMessage} (code: ${response.code})`)
+}
+/**
+ * Validates a response and parses it as JSON, throwing on Nebula error payloads
+ * @param {Object} resp the http response
+ * @returns {any} the parsed json object
+ * @throws {ScriptException}
+ */
+function parseJson(response) {
+    checkResponse(response)
+    const json = JSON.parse(response.body)
+    if (json.errors) {
+        throw new ScriptException(json.errors[0].message)
+    }
+    return json
+}
+/**
+ * GET returning parsed JSON, with Nebula error handling.
+ * @param {string} url
+ * @param {Object} [options]
+ * @param {boolean} [options.auth] send the bearer token + Nebula app headers (for user-specific or gated
+ *   endpoints). Omit for public endpoints (home, search, channel, class search) so a stale saved token
+ *   can't break browsing — Nebula returns 403 for an invalid bearer but 200 for no bearer.
+ * @param {boolean} [options.useLogin] also send Grayjay's stored login session (cookies); needed by the user-account endpoint.
+ * @param {Object} [options.headers] additional headers to merge in.
+ * @returns {any} the parsed json object
+ * @throws {ScriptException}
+ */
+function getJson(url, { auth = false, useLogin = false, headers } = {}) {
+    let requestHeaders
+    if (auth) {
+        requestHeaders = authHeaders(url, headers)
+    } else {
+        requestHeaders = Object.assign(standardHeaders(url), headers ?? {})
+    }
+    return parseJson(http.GET(url, requestHeaders, useLogin))
+}
+/**
+ * GET returning the raw response body (e.g. an HLS playlist or VTT). No bearer token.
+ * @param {string} url
+ * @param {Object} [extraHeaders]
+ * @returns {string} the response body
+ * @throws {ScriptException}
+ */
+function getText(url, extraHeaders) {
+    const response = http.GET(url, Object.assign(standardHeaders(url), extraHeaders ?? {}), false)
+    checkResponse(response)
+    return response.body
+}
+/**
+ * Collects results across every page of a paginated (authenticated) Nebula list endpoint
+ * @param {string} url the first page url
+ * @returns {any[]} flattened results from all pages
+ */
+function collectPages(url) {
+    const results = []
+    let next = url
+    while (next !== null) {
+        const page = getJson(next, { auth: true })
+        results.push(...page.results)
+        next = page.next
+    }
+    return results
 }
 /**
  * Extracts the URI of the first EXT-X-MEDIA entry of the given type from an HLS master manifest
@@ -516,11 +467,11 @@ function callUrl(url, use_authenticated = false, parse_response = true) {
  * @returns {string | null}
  */
 function getHlsMediaUri(manifestBody, type) {
-    const line = manifestBody
+    const mediaLine = manifestBody
         .split('\n')
-        .find((l) => l.startsWith('#EXT-X-MEDIA:') && l.includes(`TYPE=${type}`))
-    if (!line) return null
-    const match = line.match(/URI="([^"]+)"/)
+        .find((line) => line.startsWith('#EXT-X-MEDIA:') && line.includes(`TYPE=${type}`))
+    if (!mediaLine) return null
+    const match = mediaLine.match(/URI="([^"]+)"/)
     return match ? match[1] : null
 }
 /**
@@ -532,8 +483,8 @@ function getHlsMediaUri(manifestBody, type) {
 function getHlsSegment(playlistBody, extension) {
     const segment = playlistBody
         .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l && !l.startsWith('#') && l.endsWith(extension))
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#') && line.endsWith(extension))
         .pop()
     return segment ?? null
 }
@@ -548,11 +499,38 @@ function resolveHlsUri(baseDir, uri) {
     return baseDir + uri
 }
 /**
+ * Extracts the English WebVTT subtitle content by walking the HLS manifest chain:
+ * master manifest -> EXT-X-MEDIA SUBTITLES playlist -> .vtt segment.
+ * @param {string} manifestUrl the master HLS manifest url
+ * @returns {string | null} the WebVTT content, or null if no subtitles are available
+ */
+function fetchSubtitleVtt(manifestUrl) {
+    // Fetched directly (not via getText) because we need the redirected response url
+    const manifestResponse = http.GET(manifestUrl, {}, false)
+
+    // Resolve relative HLS URIs against the manifest's directory (CDN-agnostic)
+    const cleanUrl = manifestResponse.url.split('?')[0].split('#')[0]
+    const lastSlash = cleanUrl.lastIndexOf('/')
+    if (lastSlash === -1) return null
+    const prefix = cleanUrl.slice(0, lastSlash + 1)
+
+    const subtitleUri = getHlsMediaUri(manifestResponse.body, 'SUBTITLES')
+    if (!subtitleUri) return null
+
+    const subtitlePlaylistUrl = resolveHlsUri(prefix, subtitleUri)
+    const vttFile = getHlsSegment(getText(subtitlePlaylistUrl), '.vtt')
+    if (!vttFile) return null
+
+    // The .vtt is relative to the subtitle playlist's directory
+    const subtitleBase = subtitlePlaylistUrl.slice(0, subtitlePlaylistUrl.lastIndexOf('/') + 1)
+    return getText(resolveHlsUri(subtitleBase, vttFile))
+}
+/**
  * Gets an authorization token
  * @returns {string} the token
  */
 function getToken() {
-    const resp = http.POST(
+    const response = http.POST(
         'https://users.api.nebula.app/api/v1/authorization/',
         '',
         {
@@ -567,33 +545,48 @@ function getToken() {
         true
     )
 
-    const j = JSON.parse(resp.body)
+    const tokenResponse = JSON.parse(response.body)
 
-    return j.token
+    return tokenResponse.token
+}
+/**
+ * Converts a date string to whole Unix seconds
+ * @param {string} dateString
+ * @returns {number}
+ */
+function unixSeconds(dateString) {
+    return parseInt(new Date(dateString).getTime() / 1000)
+}
+/**
+ * Returns the last non-empty path segment of a url (e.g. the channel slug)
+ * @param {string} url
+ * @returns {string}
+ */
+function lastPathSegment(url) {
+    return url.split('/').filter((segment) => segment !== '').pop()
 }
 /**
  * Gets a list of links from a channel object
  * @param {import("./types.d.ts").Channel} c
  * @returns {string[]}
  */
-function getChannelLinks(c) {
+function getChannelLinks(channel) {
     const keys = ['website', 'patreon', 'twitter', 'instagram', 'facebook', 'merch', 'share_url']
 
-    let links_map = {}
+    const links = {}
 
-    keys.forEach((k) => {
-        let label = k;
-
-        if (k === 'share_url') {
+    keys.forEach((key) => {
+        if (!channel[key]) return
+        let label
+        if (key === 'share_url') {
             label = 'Nebula'
         } else {
-            label = label.charAt(0).toUpperCase() + label.slice(1)
+            label = key.charAt(0).toUpperCase() + key.slice(1)
         }
-
-        if (c[k]) links_map[label] = c[k]
+        links[label] = channel[key]
     })
 
-    return links_map
+    return links
 }
 //#endregion
 
@@ -607,11 +600,11 @@ class HomePager extends VideoPager {
         if (context.next !== null) url = context.next
 
         /** @type {import("./types.d.ts").HomeResponse} */
-        const json = callUrl(url)
+        const response = getJson(url)
 
-        const results = json.results.map((c) => contentToPlatformVideo(c))
+        const results = response.results.map((content) => contentToPlatformVideo(content))
 
-        context.next = json.next
+        context.next = response.next
 
         super(results, context.next !== null, context)
     }
@@ -626,30 +619,21 @@ class ChannelVideoPager extends VideoPager {
      * @param {import("./types.d.ts").ChannelContext} context the context
      */
     constructor(context) {
-        let url = context.type === "video_channel"
+        const isVideoChannel = context.type === "video_channel"
+        let url = isVideoChannel
             ? `https://content.api.nebula.app/video_channels/${context.id}/video_episodes/?ordering=-published_at`
             : `https://content.api.nebula.app/podcast_channels/${context.id}/podcast_episodes/?ordering=-published_at`
 
         if (context.next !== null) url = context.next
 
         /** @type {import("./types.d.ts").ChannelContentResponse} */
-        const j = context.type === "video_channel"
-            ? callUrl(url)
-            : JSON.parse(http.GET(
-                url,
-                {
-                    Authorization: `Bearer ${state.token}`,
-                    "User-Agent": USER_AGENT,
-                    Host: "content.api.nebula.app"
-                },
-                false
-            ).body)
+        const response = getJson(url, { auth: !isVideoChannel })
 
-        const results = j.results.map((v) => contentToPlatformVideo(v))
+        const results = response.results.map((content) => contentToPlatformVideo(content))
 
-        context.next = j.next
+        context.next = response.next
 
-        super(results, j.next !== null, context)
+        super(results, response.next !== null, context)
     }
     nextPage() {
         return new ChannelVideoPager(this.context)
@@ -661,11 +645,11 @@ class SearchPager extends VideoPager {
      */
     constructor(context) {
         /** @type {import("./types.d.ts").SearchResponse}*/
-        const j = callUrl(`https://content.api.nebula.app/video_episodes/search/?include=&page=${context.page}&q=${context.q}`)
+        const response = getJson(`https://content.api.nebula.app/video_episodes/search/?include=&page=${context.page}&q=${context.q}`)
 
-        const results = j.results.map((c) => contentToPlatformVideo(c))
+        const results = response.results.map((content) => contentToPlatformVideo(content))
 
-        super(results, j.next !== null, context)
+        super(results, response.next !== null, context)
     }
     nextPage() {
         this.context.page++
@@ -682,19 +666,19 @@ class SearchPagerChannels extends ChannelPager {
 
         if (context.next !== null) {
             /** @type {import("./types.d.ts").SearchChannelResponse} */
-            const j = callUrl(context.next)
+            const response = getJson(context.next)
 
-            results.push(...j.results.map((v) => searchChannelToPlatformChannel(v)))
+            results.push(...response.results.map((channel) => searchChannelToPlatformChannel(channel)))
 
-            context.next = j.next
+            context.next = response.next
         }
 
         if (context.podcastNext !== null) {
-            const j = callUrl(context.podcastNext)
+            const response = getJson(context.podcastNext)
 
-            context.podcastNext = j.next
+            context.podcastNext = response.next
 
-            results.push(...j.results.map((v) => searchChannelToPlatformChannel(v)))
+            results.push(...response.results.map((channel) => searchChannelToPlatformChannel(channel)))
         }
 
         super(results, context.podcastNext !== null || context.next !== null, context)
@@ -705,13 +689,13 @@ class SearchPagerChannels extends ChannelPager {
 }
 class ClassSearchPager extends PlaylistPager {
     constructor(query) {
-        const response = callUrl(`https://content.api.nebula.app/classes/search/?q=${query}`)
+        const response = getJson(`https://content.api.nebula.app/classes/search/?q=${query}`)
         const results = response.results.map(classToPlaylist)
         super(results, response.next !== null)
         this.next = response.next
     }
     nextPage() {
-        const response = callUrl(this.next)
+        const response = getJson(this.next)
         this.next = response.next
         this.results = response.results.map(classToPlaylist)
         this.hasMore = response.next !== null
@@ -727,7 +711,7 @@ class PlaylistContentsPager extends VideoPager {
         this.next = next
     }
     nextPage() {
-        const response = callUrl(this.next)
+        const response = getJson(this.next)
         this.next = response.next
         this.results = response.results.map(((video) => contentToPlatformVideo(video)))
         this.hasMore = response.next !== null
@@ -746,23 +730,11 @@ class ContentRecommendationsPager extends VideoPager {
         if (context.next !== null) url = context.next
 
         /** @type {import("./types.d.ts").HomeResponse} */
-        const json = JSON.parse(http.GET(
-            url,
-            {
-                Authorization: `Bearer ${state.token}`,
-                'User-Agent': USER_AGENT,
-                Accept: 'application/json, text/plain, */*',
-                'Nebula-App-Version': APP_VERSION,
-                'Nebula-Platform': 'web',
-                Origin: 'https://nebula.tv',
-                Host: 'content.api.nebula.app'
-            },
-            false
-        ).body)
+        const response = getJson(url, { auth: true })
 
-        const results = json.results.map((c) => contentToPlatformVideo(c))
+        const results = response.results.map((content) => contentToPlatformVideo(content))
 
-        context.next = json.next
+        context.next = response.next
 
         super(results, context.next !== null, context)
     }
@@ -779,16 +751,16 @@ class ContentRecommendationsPager extends VideoPager {
  * @param {import("./types.d.ts").Channel} c
  * @returns { PlatformChannel }
  */
-function searchChannelToPlatformChannel(c) {
+function searchChannelToPlatformChannel(channel) {
     return new PlatformChannel({
-        id: new PlatformID(PLATFORM, c.id, plugin.config.id, PLATFORM_CLAIMTYPE),
-        name: c.title,
-        thumbnail: c.images === undefined ? c.assets["stripped-original"] : c.images.avatar.src,
-        banner: c.images?.banner?.src,
+        id: new PlatformID(PLATFORM, channel.id, plugin.config.id, PLATFORM_CLAIMTYPE),
+        name: channel.title,
+        thumbnail: channel.images === undefined ? channel.assets["stripped-original"] : channel.images.avatar.src,
+        banner: channel.images?.banner?.src,
         subscribers: -1,
-        description: c.description,
-        url: `${BASE_URL}${c.slug}`,
-        links: getChannelLinks(c),
+        description: channel.description,
+        url: `${BASE_URL}${channel.slug}`,
+        links: getChannelLinks(channel),
     })
 }
 /**
@@ -796,34 +768,34 @@ function searchChannelToPlatformChannel(c) {
  * @param { import("./types.d.ts").Content } c
  * @returns { PlatformVideo }
  */
-function contentToPlatformVideo(c) {
-    const thumbnailUrl = c.images === undefined
-        ? c.assets["stripped-original"]
-        : c.images.thumbnail?.src
-    const channelThumbnailUrl = c.images === undefined
-        ? c.assets["stripped-original"]
-        : c.images.channel_avatar?.src
-    const author = c.class === undefined
+function contentToPlatformVideo(content) {
+    const thumbnailUrl = content.images === undefined
+        ? content.assets["stripped-original"]
+        : content.images.thumbnail?.src
+    const channelThumbnailUrl = content.images === undefined
+        ? content.assets["stripped-original"]
+        : content.images.channel_avatar?.src
+    const author = content.class === undefined
         ? new PlatformAuthorLink(
-            new PlatformID(PLATFORM, c.channel_id, plugin.config.id, PLATFORM_CLAIMTYPE),
-            c.channel_title,
-            BASE_URL + c.channel_slug,
+            new PlatformID(PLATFORM, content.channel_id, plugin.config.id, PLATFORM_CLAIMTYPE),
+            content.channel_title,
+            BASE_URL + content.channel_slug,
             channelThumbnailUrl
         )
         : new PlatformAuthorLink(
-            new PlatformID(PLATFORM, c.class.creator, plugin.config.id, PLATFORM_CLAIMTYPE),
-            c.class.creator,
-            c.class.creator
+            new PlatformID(PLATFORM, content.class.creator, plugin.config.id, PLATFORM_CLAIMTYPE),
+            content.class.creator,
+            content.class.creator
         )
     return new PlatformVideo({
-        id: new PlatformID(PLATFORM, c.id, plugin.config.id),
-        name: c.title,
-        thumbnails: new Thumbnails([new Thumbnail(thumbnailUrl ?? channelThumbnailUrl, HARDCODED_ZERO)]),
+        id: new PlatformID(PLATFORM, content.id, plugin.config.id),
+        name: content.title,
+        thumbnails: new Thumbnails([new Thumbnail(thumbnailUrl ?? channelThumbnailUrl, 0)]),
         author,
-        uploadDate: parseInt(new Date(c.published_at === undefined ? c.class.published_at : c.published_at).getTime() / 1000),
-        duration: c.duration,
+        uploadDate: unixSeconds(content.published_at === undefined ? content.class.published_at : content.published_at),
+        duration: content.duration,
         viewCount: 0,
-        url: c.share_url,
+        url: content.share_url,
         isLive: false,
     })
 }
@@ -833,65 +805,42 @@ function contentToPlatformVideo(c) {
  * @param {string} manifest_url
  * @returns {PlatformVideoDetails}
  */
-function contentToPlatformVideoDetails(c, manifest_url) {
-    const pv = contentToPlatformVideo(c)
-    const pvd = new PlatformVideoDetails(pv)
-    pvd.description = c.description === undefined ? c.class.description : c.description
+function contentToPlatformVideoDetails(content, manifest_url) {
+    const platformVideo = contentToPlatformVideo(content)
+    const videoDetails = new PlatformVideoDetails(platformVideo)
+    videoDetails.description = content.description === undefined ? content.class.description : content.description
     // Nebula is English-only: no language metadata in the API, and HLS
     // manifests contain a single audio track with no alternate languages.
-    if (c.type === "podcast_episode" || c.episode_url) {
-        pvd.video = new UnMuxVideoSourceDescriptor([], [new AudioUrlSource({
+    if (content.type === "podcast_episode" || content.episode_url) {
+        videoDetails.video = new UnMuxVideoSourceDescriptor([], [new AudioUrlSource({
             name: "English",
             bitrate: 128000,
-            // container: "mp3",
-            // codecs: "mp3",
-            // duration: 65,
-            url: c.episode_url,
+            url: content.episode_url,
             language: "en"
         })])
     } else {
 
         if (IS_DESKTOP) {
-            pvd.video = new VideoSourceDescriptor(
-                [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })]
+            videoDetails.video = new VideoSourceDescriptor(
+                [new HLSSource({ name: 'hls', duration: content.duration, url: manifest_url })]
             )
         } else {
             // workaround on mobile where some downloads (from playlists, watch later) don't have audio. However this creates issues on desktop playing content;
-            pvd.video = new UnMuxVideoSourceDescriptor(
-                [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url })],
-                [new HLSSource({ name: 'hls', duration: c.duration, url: manifest_url, language: 'en' })]
+            videoDetails.video = new UnMuxVideoSourceDescriptor(
+                [new HLSSource({ name: 'hls', duration: content.duration, url: manifest_url })],
+                [new HLSSource({ name: 'hls', duration: content.duration, url: manifest_url, language: 'en' })]
             )
         }
 
-        const subtitleEntry = {
+        videoDetails.subtitles = [{
             name: "English",
             format: "text/vtt",
             getSubtitles() {
-                const manifestResponse = http.GET(manifest_url, {}, false)
-
-                // Resolve relative HLS URIs against the manifest's directory (CDN-agnostic)
-                const cleanUrl = manifestResponse.url.split('?')[0].split('#')[0]
-                const lastSlash = cleanUrl.lastIndexOf('/')
-                if (lastSlash === -1) return null
-                const prefix = cleanUrl.slice(0, lastSlash + 1)
-
-                const subtitleUri = getHlsMediaUri(manifestResponse.body, 'SUBTITLES')
-                if (!subtitleUri) return null
-
-                const subtitlePlaylistUrl = resolveHlsUri(prefix, subtitleUri)
-                const subtitlePlaylist = callUrl(subtitlePlaylistUrl, false, false)
-
-                const vttFile = getHlsSegment(subtitlePlaylist, '.vtt')
-                if (!vttFile) return null
-
-                // The .vtt is relative to the subtitle playlist's directory
-                const subtitleBase = subtitlePlaylistUrl.slice(0, subtitlePlaylistUrl.lastIndexOf('/') + 1)
-                return callUrl(resolveHlsUri(subtitleBase, vttFile), false, false)
+                return fetchSubtitleVtt(manifest_url)
             }
-        }
-        pvd.subtitles = [subtitleEntry]
+        }]
     }
-    return pvd
+    return videoDetails
 }
 function classToPlaylist(nebulaClass) {
     return new PlatformPlaylist({
@@ -902,7 +851,7 @@ function classToPlaylist(nebulaClass) {
             nebulaClass.creator,
             nebulaClass.creator
         ),
-        datetime: parseInt(new Date(nebulaClass.published_at).getTime() / 1000),
+        datetime: unixSeconds(nebulaClass.published_at),
         url: `${nebulaClass.share_url}1?tab=lessons`,
         videoCount: nebulaClass.lesson_count,
         thumbnail: nebulaClass.images.featured.src
