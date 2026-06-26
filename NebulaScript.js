@@ -510,6 +510,44 @@ function callUrl(url, use_authenticated = false, parse_response = true) {
     return resp.body
 }
 /**
+ * Extracts the URI of the first EXT-X-MEDIA entry of the given type from an HLS master manifest
+ * @param {string} manifestBody
+ * @param {string} type e.g. "SUBTITLES"
+ * @returns {string | null}
+ */
+function getHlsMediaUri(manifestBody, type) {
+    const line = manifestBody
+        .split('\n')
+        .find((l) => l.startsWith('#EXT-X-MEDIA:') && l.includes(`TYPE=${type}`))
+    if (!line) return null
+    const match = line.match(/URI="([^"]+)"/)
+    return match ? match[1] : null
+}
+/**
+ * Returns the last non-comment segment line of an HLS media playlist ending with the extension
+ * @param {string} playlistBody
+ * @param {string} extension e.g. ".vtt"
+ * @returns {string | null}
+ */
+function getHlsSegment(playlistBody, extension) {
+    const segment = playlistBody
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('#') && l.endsWith(extension))
+        .pop()
+    return segment ?? null
+}
+/**
+ * Resolves a (possibly relative) HLS URI against a base directory URL
+ * @param {string} baseDir base URL ending in '/'
+ * @param {string} uri absolute or relative URI
+ * @returns {string}
+ */
+function resolveHlsUri(baseDir, uri) {
+    if (uri.startsWith('http')) return uri
+    return baseDir + uri
+}
+/**
  * Gets an authorization token
  * @returns {string} the token
  */
@@ -830,27 +868,25 @@ function contentToPlatformVideoDetails(c, manifest_url) {
             format: "text/vtt",
             getSubtitles() {
                 const manifestResponse = http.GET(manifest_url, {}, false)
-                const url = manifestResponse.url
 
-                const prefixMatch = url.match(/^(https:\/\/starlight\.nebula\.tv\/.*\/).*\.m3u8$/)
-                if (!prefixMatch) return null
+                // Resolve relative HLS URIs against the manifest's directory (CDN-agnostic)
+                const cleanUrl = manifestResponse.url.split('?')[0].split('#')[0]
+                const lastSlash = cleanUrl.lastIndexOf('/')
+                if (lastSlash === -1) return null
+                const prefix = cleanUrl.slice(0, lastSlash + 1)
 
-                const prefix = prefixMatch[1]
+                const subtitleUri = getHlsMediaUri(manifestResponse.body, 'SUBTITLES')
+                if (!subtitleUri) return null
 
-                const matchResult = manifestResponse.body.match(/(subtitles\/en.*\/)media\.[a-z0-9]{12}\.m3u8/)
-                if (!matchResult) return null
+                const subtitlePlaylistUrl = resolveHlsUri(prefix, subtitleUri)
+                const subtitlePlaylist = callUrl(subtitlePlaylistUrl, false, false)
 
-                const nextUrl = prefix + matchResult[0]
-                const vttMatch = callUrl(
-                    nextUrl,
-                    false,
-                    false
-                ).match(/main\.[a-z0-9]{12}\.vtt/)
-                if (!vttMatch) return null
+                const vttFile = getHlsSegment(subtitlePlaylist, '.vtt')
+                if (!vttFile) return null
 
-                const nextNextUrl = prefix + matchResult[1] + vttMatch[0]
-
-                return callUrl(nextNextUrl, false, false)
+                // The .vtt is relative to the subtitle playlist's directory
+                const subtitleBase = subtitlePlaylistUrl.slice(0, subtitlePlaylistUrl.lastIndexOf('/') + 1)
+                return callUrl(resolveHlsUri(subtitleBase, vttFile), false, false)
             }
         }
         pvd.subtitles = [subtitleEntry]
