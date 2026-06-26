@@ -430,13 +430,19 @@ function parseJson(response) {
  * @throws {ScriptException}
  */
 function getJson(url, { auth = false, useLogin = false, headers } = {}) {
-    let requestHeaders
-    if (auth) {
-        requestHeaders = authHeaders(url, headers)
-    } else {
-        requestHeaders = Object.assign(standardHeaders(url), headers ?? {})
+    function buildHeaders() {
+        if (auth) {
+            return authHeaders(url, headers)
+        }
+        return Object.assign(standardHeaders(url), headers ?? {})
     }
-    return parseJson(http.GET(url, requestHeaders, useLogin))
+    let response = http.GET(url, buildHeaders(), useLogin)
+    // A 403 on an authenticated request means the token is stale/invalid — refresh once and retry.
+    if (auth && response.code === 403) {
+        state.token = getToken()
+        response = http.GET(url, buildHeaders(), useLogin)
+    }
+    return parseJson(response)
 }
 /**
  * GET returning the raw response body (e.g. an HLS playlist or VTT). No bearer token.
@@ -471,12 +477,22 @@ function collectPages(url) {
  * @returns {any[]}
  */
 function batchGetJson(requests) {
-    const builder = http.batch()
-    for (const request of requests) {
-        const headers = request.auth ? authHeaders(request.url) : standardHeaders(request.url)
-        builder.GET(request.url, headers, false)
+    function send() {
+        const builder = http.batch()
+        for (const request of requests) {
+            const headers = request.auth ? authHeaders(request.url) : standardHeaders(request.url)
+            builder.GET(request.url, headers, false)
+        }
+        return builder.execute()
     }
-    return builder.execute().map((response) => parseJson(response))
+    let responses = send()
+    // Refresh the token once and re-run if any authenticated request hit a stale-token 403.
+    const hasStaleAuth = responses.some((response, index) => requests[index].auth && response && response.code === 403)
+    if (hasStaleAuth) {
+        state.token = getToken()
+        responses = send()
+    }
+    return responses.map((response) => parseJson(response))
 }
 /**
  * Extracts the URI of the first EXT-X-MEDIA entry of the given type from an HLS master manifest
@@ -811,7 +827,7 @@ function contentToPlatformVideo(content) {
         author,
         uploadDate: unixSeconds(content.published_at === undefined ? content.class.published_at : content.published_at),
         duration: content.duration,
-        viewCount: 0,
+        viewCount: -1, // Nebula's API exposes no view count; -1 = unknown
         url: content.share_url,
         isLive: false,
     })
