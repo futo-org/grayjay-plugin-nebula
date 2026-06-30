@@ -7,7 +7,7 @@
     "sourceUrl": "https://plugins.grayjay.app/Nebula/NebulaConfig.json",
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/nebula",
     "scriptUrl": "./NebulaScript.js",
-    "version": 17,
+    "version": 18,
     "iconUrl": "./NebulaIcon.png",
     "id": "9d703ff5-c556-4962-a990-4f000829cb87",
     "scriptSignature": "",
@@ -48,6 +48,14 @@
         }
     ],
     "changelog": {
+        "18": [
+            "Fix: Subtitles;",
+            "Fix: Watch Later and Saved Episodes playlist author;",
+            "Fix: Automatically recover from expired sessions;",
+            "Fix: Minor code improvements;",
+            "Improvement: Faster channel search and subscription import using parallel requests;",
+            "Improvement: Search now includes podcast episodes and series;"
+        ],
         "17": [
             "Fix: Playback on desktop;"
         ],
